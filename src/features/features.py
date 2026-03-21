@@ -1,5 +1,6 @@
 import os
 import importlib
+import pkgutil
 import pandas as pd
 from typing import List, Dict, Any, Optional
 from .base import FEATURE_REGISTRY, FeatureResult, Feature
@@ -8,23 +9,16 @@ def load_features():
     """
     Dynamically imports all modules in the features subdirectories 
     to trigger @register_feature decorators.
+    Uses pkgutil for reliable submodule discovery.
     """
     base_dir = os.path.dirname(__file__)
-    for root, dirs, files in os.walk(base_dir):
-        # Skip the base directory itself (base.py, features.py)
-        if root == base_dir:
-            continue
-            
-        for file in files:
-            if file.endswith(".py") and file != "__init__.py":
-                # Convert path to module format
-                # e.g., src/features/momentum/rsi.py -> .momentum.rsi
-                rel_path = os.path.relpath(os.path.join(root, file), base_dir)
-                module_name = "." + rel_path.replace(os.path.sep, ".").replace(".py", "")
-                try:
-                    importlib.import_module(module_name, package=__package__)
-                except Exception as e:
-                    print(f"Error loading feature module {module_name}: {e}")
+    # Iterates through all submodules in the current package
+    for loader, module_name, is_pkg in pkgutil.walk_packages([base_dir], prefix="."):
+        if not is_pkg:
+            try:
+                importlib.import_module(module_name, package=__package__)
+            except Exception as e:
+                print(f"Error loading feature module {module_name}: {e}")
 
 # Initial load to populate FEATURE_REGISTRY
 load_features()
@@ -60,8 +54,7 @@ class FeatureOrchestrator:
         computed_features = {}
         visuals_master_list = []
         
-        # Reset cache for a fresh run if needed, or maintain it across symbols?
-        # For now, we'll keep it for the duration of this call.
+        # Reset cache for a fresh run
         self.shared_cache = {}
 
         for config in feature_config:

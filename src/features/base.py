@@ -122,7 +122,7 @@ class Feature(ABC):
         """
         return 0.1
     
-    def normalize(self, df: pd.DataFrame, series: pd.Series, method: str) -> pd.Series:
+    def normalize(self, df: pd.DataFrame, series: pd.Series, method: str, window: int = 20) -> pd.Series:
         """
         Systematically normalizes raw indicator data for Machine Learning.
         """
@@ -144,8 +144,8 @@ class Feature(ABC):
             
         # Z-Score (For Volume, or unbounded oscillators)
         elif method == "z_score":
-            rolling_mean = series.rolling(window=20).mean()
-            rolling_std = series.rolling(window=20).std().replace(0, 1e-9)
+            rolling_mean = series.rolling(window=window).mean()
+            rolling_std = series.rolling(window=window).std().replace(0, 1e-9)
             return (series - rolling_mean) / rolling_std
             
         else:
