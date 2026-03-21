@@ -12,7 +12,7 @@ class SupportResistance(Feature):
 
     @property
     def description(self) -> str:
-        return "Identifies key price clusters using Local Extrema, Fractals, or ZigZag."
+        return "Rolling ML-Safe Pivot Tracker & GUI Visual Clusters."
 
     @property
     def category(self) -> str:
@@ -21,108 +21,116 @@ class SupportResistance(Feature):
     @property
     def parameters(self) -> Dict[str, Any]:
         return {
-            "method": ["ZigZag", "Savitzky-Golay", "Bill Williams"], 
-            "threshold_pct": 0.015, # For identifying the pivot itself (ZigZag)
-            "window": 2, # For Bill Williams Fractals
-            "clustering_pct": 0.02, # For merging nearby pivots
+            "method": "Bill Williams", # Defaulting to the most robust vectorized method
+            "threshold_pct": 0.015,
+            "window": 3, 
+            "clustering_pct": 0.02, 
             "min_strength": 1.0
+        }
+        
+    @property
+    def parameter_options(self) -> Dict[str, List[Any]]:
+        return {
+            "method": ["ZigZag", "Savitzky-Golay", "Bill Williams"]
         }
 
     def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
-        method = params.get("method", "ZigZag")
+        method = params.get("method", "Bill Williams")
         threshold = float(params.get("threshold_pct", 0.015))
-        window = int(params.get("window", 2))
+        window = int(params.get("window", 3))
         cluster_thresh = float(params.get("clustering_pct", 0.02))
         min_str = float(params.get("min_strength", 1.0))
 
+        # 1. Extract Pivots (Indices are strictly the confirmation bar, T-Zero safe)
         pivots = []
         if method == "Savitzky-Golay":
-            pivots = self.get_pivots_smoothed(df, window=5) # Fixed window for stability
+            pivots = self.get_pivots_smoothed(df, window=5)
         elif method == "Bill Williams":
             pivots = self.get_pivots_bill_williams_vectorized(df, window=window)
-        else: # ZigZag (Iterative by nature for live, but we process historically here)
+        else: 
             pivots = self.get_pivots_zigzag(df, deviation_pct=threshold) 
 
-        clusters = self.cluster_pivots(pivots, cluster_thresh)
+        # ==========================================
+        # PART A: THE ALPHA ENGINE DATA (STRICT ML-SAFE)
+        # ==========================================
+        supp_series = pd.Series(np.nan, index=df.index)
+        res_series = pd.Series(np.nan, index=df.index)
         
+        # Populate the timeline EXACTLY when the pivot is confirmed
+        for p in pivots:
+            idx = p['index']
+            if idx < len(df):
+                if p['type'] == 'support':
+                    supp_series.iloc[idx] = p['price']
+                else:
+                    res_series.iloc[idx] = p['price']
+                    
+        # Forward fill the active levels (No time traveling!)
+        rolling_supp = supp_series.ffill()
+        rolling_res = res_series.ffill()
+        
+        # Calculate percentage distance to the active levels
+        dist_to_supp = (df['Close'] - rolling_supp) / df['Close']
+        dist_to_res = (rolling_res - df['Close']) / df['Close']
+
+        data_dict = {
+            "Dist_to_Support": dist_to_supp.fillna(0.0),
+            "Dist_to_Resistance": dist_to_res.fillna(0.0),
+            "Last_Support_Level": rolling_supp.fillna(df['Close']),
+            "Last_Resistance_Level": rolling_res.fillna(df['Close'])
+        }
+
+        # ==========================================
+        # PART B: THE GUI VISUALS (CLUSTERING)
+        # ==========================================
         visuals = []
-        for c in clusters:
-            if c['strength'] >= min_str:
-                visuals.append(LevelOutput(
-                    name=f"Level {c['price']}",
-                    price=c['price'],
-                    min_price=c['min_price'],
-                    max_price=c['max_price'],
-                    strength=c['strength'],
-                    color='#0000ff'
-                ))
-        
-        if not clusters:
-             return FeatureResult(visuals=visuals, data={})
+        if pivots:
+            # For the visual chart, we only want to cluster the recent relevant pivots 
+            # so the chart isn't cluttered with 10 years of lines.
+            recent_pivots = pivots[-50:] if len(pivots) > 50 else pivots
+            clusters = self.cluster_pivots(recent_pivots, cluster_thresh)
+            
+            for c in clusters:
+                if c['strength'] >= min_str:
+                    visuals.append(LevelOutput(
+                        name=f"Level {c['price']}",
+                        price=c['price'],
+                        min_price=c['min_price'],
+                        max_price=c['max_price'],
+                        strength=c['strength'],
+                        color='#0000ff'
+                    ))
 
-        # Vectorized distance to nearest support and resistance
-        prices = df['Close'].values
-        all_levels = np.sort([c['price'] for c in clusters])
-        
-        # Use searchsorted for O(log n) lookup
-        idx = np.searchsorted(all_levels, prices)
-        
-        # Support: Highest level <= current price
-        supp_idx = np.maximum(idx - 1, 0)
-        supp_levels = all_levels[supp_idx]
-        dist_to_supp = (prices - supp_levels) / prices
-        # Handle prices below all levels
-        dist_to_supp[prices < all_levels[0]] = 0.0
-        
-        # Resistance: Lowest level >= current price
-        res_idx = np.minimum(idx, len(all_levels) - 1)
-        res_levels = all_levels[res_idx]
-        dist_to_res = (res_levels - prices) / prices
-        # Handle prices above all levels
-        dist_to_res[prices > all_levels[-1]] = 0.0
+        return FeatureResult(visuals=visuals, data=data_dict)
 
-        return FeatureResult(visuals=visuals, data={
-            "Dist_to_Support": pd.Series(dist_to_supp, index=df.index),
-            "Dist_to_Resistance": pd.Series(dist_to_res, index=df.index)
-        })
+    # --- KEEPING YOUR EXCELLENT PIVOT EXTRACTION METHODS EXACTLY THE SAME ---
 
     def get_pivots_bill_williams_vectorized(self, df, window=2):
-        """Purely vectorized Bill Williams Fractals with T-Zero Rule enforcement."""
         lows = df['Low']
         highs = df['High']
         
-        # Bullish Fractal (Support)
         is_support = True
         for j in range(1, window + 1):
             is_support &= (lows < lows.shift(j)) & (lows < lows.shift(-j))
-        
-        # Shift forward by 'window' bars to record ONLY when confirmed
-        # (e.g., a 2-bar fractal is confirmed after the 2nd candle to the right closes)
         confirmed_support = is_support.shift(window)
         
-        # Bearish Fractal (Resistance)
         is_resistance = True
         for j in range(1, window + 1):
             is_resistance &= (highs > highs.shift(j)) & (highs > highs.shift(-j))
-            
         confirmed_resistance = is_resistance.shift(window)
         
         pivots = []
-        # Support Pivots
         supp_indices = np.where(confirmed_support == True)[0]
         for idx in supp_indices:
-            # The actual pivot price is from 'window' bars ago
             pivots.append({'price': df['Low'].iloc[idx - window], 'index': idx, 'type': 'support'})
             
-        # Resistance Pivots
         res_indices = np.where(confirmed_resistance == True)[0]
         for idx in res_indices:
             pivots.append({'price': df['High'].iloc[idx - window], 'index': idx, 'type': 'resistance'})
             
-        return pivots
+        return sorted(pivots, key=lambda x: x['index'])
 
     def get_pivots_smoothed(self, df, window=5, polyorder=3):
-        """Savitzky-Golay with confirmation delay (T-Zero)."""
         if window % 2 == 0: window += 1
         if len(df) <= window: return []
 
@@ -131,21 +139,15 @@ class SupportResistance(Feature):
         
         pivots = []
         half = window // 2
-        # We start looking only after we have enough data to confirm the center point
         for i in range(half, len(df) - half):
-            # Confirmation happens at index i + half
             confirmation_idx = i + half
-            
-            # Support
             if smoothed_low[i] == min(smoothed_low[i-half:i+half+1]):
                 pivots.append({'price': df['Low'].iloc[i], 'index': confirmation_idx, 'type': 'support'})
-            # Resistance
             if smoothed_high[i] == max(smoothed_high[i-half:i+half+1]):
                 pivots.append({'price': df['High'].iloc[i], 'index': confirmation_idx, 'type': 'resistance'})
-        return pivots
+        return sorted(pivots, key=lambda x: x['index'])
 
     def get_pivots_zigzag(self, df, deviation_pct=0.05):
-        """ZigZag is naturally iterative but enforces the T-Zero rule."""
         pivots = []
         last_pivot_price = df['Close'].iloc[0]
         last_pivot_type = None 
@@ -185,34 +187,22 @@ class SupportResistance(Feature):
         return pivots
 
     def cluster_pivots(self, pivots, threshold_pct):
-        if not pivots:
-            return []
-
+        if not pivots: return []
         if len(pivots) == 1:
             p = pivots[0]
-            return [{
-                'price': round(float(p['price']), 2),
-                'min_price': round(float(p['price']), 2),
-                'max_price': round(float(p['price']), 2),
-                'strength': 1
-            }]
+            return [{'price': round(float(p['price']), 2), 'min_price': round(float(p['price']), 2), 'max_price': round(float(p['price']), 2), 'strength': 1}]
 
         prices = np.array([p['price'] for p in pivots]).reshape(-1, 1)
         avg_price = np.mean(prices)
         dist_threshold = avg_price * threshold_pct
 
-        model = AgglomerativeClustering(
-            n_clusters=None, 
-            distance_threshold=dist_threshold, 
-            linkage='complete'
-        )
-        
+        model = AgglomerativeClustering(n_clusters=None, distance_threshold=dist_threshold, linkage='complete')
         clusters = model.fit_predict(prices)
+        
         levels = []
         for cluster_id in np.unique(clusters):
             cluster_prices = prices[clusters == cluster_id]
             level_price = np.mean(cluster_prices)
-            
             levels.append({
                 'price': round(float(level_price), 2),
                 'min_price': round(float(np.min(cluster_prices)), 2),
