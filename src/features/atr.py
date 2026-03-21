@@ -1,0 +1,65 @@
+from typing import Dict, Any, List
+import pandas as pd
+import numpy as np
+from .base import Feature, FeatureOutput, LineOutput, LevelOutput, FeatureResult
+
+class RSI(Feature):
+    @property
+    def name(self) -> str:
+        return "RSI"
+
+    @property
+    def description(self) -> str:
+        return "Relative Strength Index (Wilder's Smoothing)."
+
+    @property
+    def category(self) -> str:
+        return "Oscillators (Momentum)"
+
+    @property
+    def parameters(self) -> Dict[str, Any]:
+        return {
+            "period": 14,
+            "overbought": 70,
+            "oversold": 30,
+            "color": "#aaff00"
+        }
+
+    @property
+    def target_pane(self) -> str:
+        return "new"
+
+    @property
+    def y_range(self) -> List[float]:
+        return [0, 100]
+
+    @property
+    def y_padding(self) -> float:
+        return 0.05
+
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
+        period = int(params.get("period", 14))
+        ob = float(params.get("overbought", 70))
+        os = float(params.get("oversold", 30))
+        
+        delta = df['Close'].diff()
+        
+        # Wilder's Smoothing uses an exponential moving average with alpha = 1/period
+        gain = (delta.where(delta > 0, 0.0)).ewm(alpha=1/period, adjust=False).mean()
+        loss = (-delta.where(delta < 0, 0.0)).ewm(alpha=1/period, adjust=False).mean()
+        
+        rs = gain / loss
+        rsi = np.where(loss == 0, 100, 100 - (100 / (1 + rs)))
+        rsi = pd.Series(rsi, index=df.index)
+        
+        visuals = [
+            LineOutput(
+                name=f"RSI_{period}",
+                data=rsi.where(pd.notnull(rsi), None).tolist(),
+                color=params.get("color", "#aaff00"),
+                width=2
+            ),
+            LevelOutput(name="Overbought", min_price=ob, max_price=ob, color="#ff4444"),
+            LevelOutput(name="Oversold", min_price=os, max_price=os, color="#44ff44")
+        ]
+        return FeatureResult(visuals=visuals, data={f"RSI_{period}": rsi})

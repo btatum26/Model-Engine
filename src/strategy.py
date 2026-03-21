@@ -6,7 +6,6 @@ import importlib.util
 from typing import Dict, List, Any, Optional
 import pandas as pd
 from datetime import datetime
-from .signals import SignalEvent
 from .engine import BaseStrategy
 
 class Strategy(BaseStrategy):
