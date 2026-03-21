@@ -1,2 +1,16 @@
-\plans
-*\__pycache__\
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.env
+
+# Project Specific
+plans/
+data/
+*.db
+
+# Gemini / AI Agents
+.gemini/
+.geminiignore
+GEMINI.md
