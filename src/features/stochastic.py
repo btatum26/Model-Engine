@@ -1,6 +1,6 @@
 from typing import Dict, Any, List
 import pandas as pd
-from .base import Feature, FeatureOutput, LineOutput, FeatureResult
+from .base import Feature, LineOutput, FeatureResult
 
 class Stochastic(Feature):
     @property
@@ -32,6 +32,7 @@ class Stochastic(Feature):
         return {
             "k_period": 14,
             "d_period": 3,
+            "normalize": "none",
             "color_k": "#00ffff",
             "color_d": "#ff00ff"
         }
@@ -39,21 +40,42 @@ class Stochastic(Feature):
     def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
         k_period = int(params.get("k_period", 14))
         d_period = int(params.get("d_period", 3))
+        norm_method = params.get("normalize", "none")
         
-        low_min = df['Low'].rolling(window=k_period).min()
-        high_max = df['High'].rolling(window=k_period).max()
+        high = df['High'] if 'High' in df.columns else df['high']
+        low = df['Low'] if 'Low' in df.columns else df['low']
+        close = df['Close'] if 'Close' in df.columns else df['close']
         
-        # %K
-        k_percent = 100 * ((df['Close'] - low_min) / (high_max - low_min))
+        # Calculate the lowest low and highest high over the lookback period
+        low_min = low.rolling(window=k_period).min()
+        high_max = high.rolling(window=k_period).max()
         
-        # %D
+        # Fast Stochastic (%K) calculation
+        k_percent = 100 * ((close - low_min) / (high_max - low_min).replace(0, 1e-9))
+        
+        # Slow Stochastic (%D) calculation (Moving Average of %K)
         d_percent = k_percent.rolling(window=d_period).mean()
         
-        def clean(s): return s.where(pd.notnull(s), None).tolist()
-        
         visuals = [
-            LineOutput(name="%K", data=clean(k_percent), color=params.get("color_k"), width=1),
-            LineOutput(name="%D", data=clean(d_percent), color=params.get("color_d"), width=1)
+            LineOutput(
+                name="%K", 
+                data=k_percent.where(pd.notnull(k_percent), None).tolist(), 
+                color=params.get("color_k"), 
+                width=1
+            ),
+            LineOutput(
+                name="%D", 
+                data=d_percent.where(pd.notnull(d_percent), None).tolist(), 
+                color=params.get("color_d"), 
+                width=1
+            )
         ]
         
-        return FeatureResult(visuals=visuals, data={"%K": k_percent, "%D": d_percent})
+        # Apply systematic normalization
+        final_k = self.normalize(df, k_percent, norm_method)
+        final_d = self.normalize(df, d_percent, norm_method)
+        
+        col_k = "Norm_%K" if norm_method != "none" else "%K"
+        col_d = "Norm_%D" if norm_method != "none" else "%D"
+
+        return FeatureResult(visuals=visuals, data={col_k: final_k, col_d: final_d})

@@ -21,7 +21,7 @@ class SupportResistance(Feature):
     @property
     def parameters(self) -> Dict[str, Any]:
         return {
-            "method": "Bill Williams", # Defaulting to the most robust vectorized method
+            "method": "Bill Williams",
             "threshold_pct": 0.015,
             "window": 3, 
             "clustering_pct": 0.02, 
@@ -41,7 +41,7 @@ class SupportResistance(Feature):
         cluster_thresh = float(params.get("clustering_pct", 0.02))
         min_str = float(params.get("min_strength", 1.0))
 
-        # 1. Extract Pivots (Indices are strictly the confirmation bar, T-Zero safe)
+        # Extract price pivots based on the selected method
         pivots = []
         if method == "Savitzky-Golay":
             pivots = self.get_pivots_smoothed(df, window=5)
@@ -50,13 +50,11 @@ class SupportResistance(Feature):
         else: 
             pivots = self.get_pivots_zigzag(df, deviation_pct=threshold) 
 
-        # ==========================================
-        # PART A: THE ALPHA ENGINE DATA (STRICT ML-SAFE)
-        # ==========================================
+        # Alpha Engine Data: Generate ML-safe level features
         supp_series = pd.Series(np.nan, index=df.index)
         res_series = pd.Series(np.nan, index=df.index)
         
-        # Populate the timeline EXACTLY when the pivot is confirmed
+        # Mark the exact confirmation bar for each pivot to avoid look-ahead bias
         for p in pivots:
             idx = p['index']
             if idx < len(df):
@@ -65,11 +63,11 @@ class SupportResistance(Feature):
                 else:
                     res_series.iloc[idx] = p['price']
                     
-        # Forward fill the active levels (No time traveling!)
+        # Forward-fill confirmed levels to provide a continuous state for strategies
         rolling_supp = supp_series.ffill()
         rolling_res = res_series.ffill()
         
-        # Calculate percentage distance to the active levels
+        # Calculate percentage distance from current price to the last confirmed levels
         dist_to_supp = (df['Close'] - rolling_supp) / df['Close']
         dist_to_res = (rolling_res - df['Close']) / df['Close']
 
@@ -80,13 +78,10 @@ class SupportResistance(Feature):
             "Last_Resistance_Level": rolling_res.fillna(df['Close'])
         }
 
-        # ==========================================
-        # PART B: THE GUI VISUALS (CLUSTERING)
-        # ==========================================
+        # GUI Visuals: Cluster recent pivots into significant price levels
         visuals = []
         if pivots:
-            # For the visual chart, we only want to cluster the recent relevant pivots 
-            # so the chart isn't cluttered with 10 years of lines.
+            # Cluster recent relevant pivots to identify strong visual levels
             recent_pivots = pivots[-50:] if len(pivots) > 50 else pivots
             clusters = self.cluster_pivots(recent_pivots, cluster_thresh)
             
@@ -103,9 +98,10 @@ class SupportResistance(Feature):
 
         return FeatureResult(visuals=visuals, data=data_dict)
 
-    # --- KEEPING YOUR EXCELLENT PIVOT EXTRACTION METHODS EXACTLY THE SAME ---
+    # --- Pivot Extraction Methods ---
 
     def get_pivots_bill_williams_vectorized(self, df, window=2):
+        """Identifies Fractals (pivots) where a point is the highest/lowest in its local window."""
         lows = df['Low']
         highs = df['High']
         
@@ -131,6 +127,7 @@ class SupportResistance(Feature):
         return sorted(pivots, key=lambda x: x['index'])
 
     def get_pivots_smoothed(self, df, window=5, polyorder=3):
+        """Uses Savitzky-Golay filter to smooth price before identifying local extrema."""
         if window % 2 == 0: window += 1
         if len(df) <= window: return []
 
@@ -148,6 +145,7 @@ class SupportResistance(Feature):
         return sorted(pivots, key=lambda x: x['index'])
 
     def get_pivots_zigzag(self, df, deviation_pct=0.05):
+        """Standard ZigZag algorithm tracking price swings exceeding a percentage threshold."""
         pivots = []
         last_pivot_price = df['Close'].iloc[0]
         last_pivot_type = None 
@@ -187,6 +185,7 @@ class SupportResistance(Feature):
         return pivots
 
     def cluster_pivots(self, pivots, threshold_pct):
+        """Agglomerative clustering to group nearby pivots into significant support/resistance levels."""
         if not pivots: return []
         if len(pivots) == 1:
             p = pivots[0]

@@ -1,53 +1,66 @@
-from typing import Dict, Any, List
+from typing import Dict, Any
 import pandas as pd
 import numpy as np
-from .base import Feature, FeatureOutput, LineOutput, FeatureResult
+from .base import Feature, LineOutput, FeatureResult
 
 class AverageTrueRange(Feature):
     @property
-    def name(self) -> str:
+    def name(self) -> str: 
         return "ATR"
 
     @property
-    def description(self) -> str:
-        return "Average True Range. Measures absolute volatility."
+    def description(self) -> str: 
+        return "Average True Range."
 
     @property
-    def target_pane(self) -> str:
-        return "new"
-
-    @property
-    def category(self) -> str:
+    def category(self) -> str: 
         return "Volatility"
+
+    @property
+    def target_pane(self) -> str: 
+        return "new"
 
     @property
     def parameters(self) -> Dict[str, Any]:
         return {
             "period": 14,
+            "normalize": "none",
             "color": "#ff0000"
         }
 
     def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
         period = int(params.get("period", 14))
+        norm_method = params.get("normalize", "none")
+        color = params.get("color", "#ff0000")
         
-        high = df['High']
-        low = df['Low']
-        close_prev = df['Close'].shift(1)
+        high = df['High'] if 'High' in df.columns else df['high']
+        low = df['Low'] if 'Low' in df.columns else df['low']
+        close = df['Close'] if 'Close' in df.columns else df['close']
         
-        # Highly optimized NumPy matrix math
+        close_prev = close.shift(1)
+
+        # Calculate the three components of True Range
         tr1 = high - low
         tr2 = (high - close_prev).abs()
         tr3 = (low - close_prev).abs()
-        
+
+        # True Range is the maximum of the three components
         tr = np.maximum(tr1, np.maximum(tr2, tr3))
+
+        # ATR is the simple moving average of True Range
         atr = tr.rolling(window=period).mean()
-        
+
         visuals = [
             LineOutput(
-                name=f"ATR_{period}",
-                data=atr.where(pd.notnull(atr), None).tolist(),
-                color=params.get("color", "#ff0000"),
+                name=f"ATR_{period}", 
+                data=atr.where(pd.notnull(atr), None).tolist(), 
+                color=color, 
                 width=2
             )
         ]
-        return FeatureResult(visuals=visuals, data={f"ATR_{period}": atr})
+
+        # Apply systematic normalization
+        final_data = self.normalize(df, atr, norm_method)
+
+        col_name = f"Norm_ATR_{period}" if norm_method != "none" else f"ATR_{period}"
+        return FeatureResult(visuals=visuals, data={col_name: final_data})

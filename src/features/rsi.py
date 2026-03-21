@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
-from .base import Feature, FeatureOutput, LineOutput, LevelOutput, FeatureResult
+from .base import Feature, LineOutput, LevelOutput, FeatureResult
 
 class RSI(Feature):
     @property
@@ -17,15 +17,6 @@ class RSI(Feature):
         return "Oscillators (Momentum)"
 
     @property
-    def parameters(self) -> Dict[str, Any]:
-        return {
-            "period": 14,
-            "overbought": 70,
-            "oversold": 30,
-            "color": "#aaff00"
-        }
-
-    @property
     def target_pane(self) -> str:
         return "new"
 
@@ -37,17 +28,33 @@ class RSI(Feature):
     def y_padding(self) -> float:
         return 0.05
 
+    @property
+    def parameters(self) -> Dict[str, Any]:
+        return {
+            "period": 14,
+            "overbought": 70,
+            "oversold": 30,
+            "normalize": "none",
+            "color": "#aaff00"
+        }
+
     def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
         period = int(params.get("period", 14))
         ob = float(params.get("overbought", 70))
         os = float(params.get("oversold", 30))
+        norm_method = params.get("normalize", "none")
+        color = params.get("color", "#aaff00")
         
-        delta = df['Close'].diff()
+        close = df['Close'] if 'Close' in df.columns else df['close']
         
-        # Wilder's Smoothing uses an exponential moving average with alpha = 1/period
+        # Calculate price changes
+        delta = close.diff()
+        
+        # Calculate gains and losses using Wilder's Smoothing
         gain = (delta.where(delta > 0, 0.0)).ewm(alpha=1/period, adjust=False).mean()
         loss = (-delta.where(delta < 0, 0.0)).ewm(alpha=1/period, adjust=False).mean()
         
+        # Relative Strength (RS) and RSI calculation
         rs = gain / loss
         rsi = np.where(loss == 0, 100, 100 - (100 / (1 + rs)))
         rsi = pd.Series(rsi, index=df.index)
@@ -56,10 +63,15 @@ class RSI(Feature):
             LineOutput(
                 name=f"RSI_{period}",
                 data=rsi.where(pd.notnull(rsi), None).tolist(),
-                color=params.get("color", "#aaff00"),
+                color=color,
                 width=2
             ),
             LevelOutput(name="Overbought", min_price=ob, max_price=ob, color="#ff4444"),
             LevelOutput(name="Oversold", min_price=os, max_price=os, color="#44ff44")
         ]
-        return FeatureResult(visuals=visuals, data={f"RSI_{period}": rsi})
+        
+        # Apply normalization to the bounded RSI series
+        final_data = self.normalize(df, rsi, norm_method)
+        
+        col_name = f"Norm_RSI_{period}" if norm_method != "none" else f"RSI_{period}"
+        return FeatureResult(visuals=visuals, data={col_name: final_data})

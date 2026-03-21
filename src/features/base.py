@@ -84,6 +84,14 @@ class Feature(ABC):
         return {}
 
     @property
+    def parameter_options(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Optional metadata for parameters (e.g., min, max, type).
+        Example: {'window': {'min': 1, 'max': 100, 'type': 'int'}}
+        """
+        return {}
+
+    @property
     def y_range(self) -> Optional[List[float]]:
         """
         Fixed Y-axis range [min, max].
@@ -105,17 +113,20 @@ class Feature(ABC):
         if method == "none" or not method:
             return series
             
-        # 1. Percentage Distance from Price (For MAs, VWAP, Support/Resistance)
-        elif method == "pct_distance":
-            # (Price - Indicator) / Indicator -> Output is a % (e.g., +0.02 means price is 2% above MA)
-            return (df['Close'] - series) / series.replace(0, 1e-9)
+        # Ensure we have consistent column access
+        close = df['Close'] if 'Close' in df.columns else df['close']
             
-        # 2. Ratio to Price (For ATR, Bollinger Width)
+        # Percentage Distance from Price (For MAs, VWAP, Support/Resistance)
+        if method == "pct_distance":
+            # (Price - Indicator) / Indicator -> Output is a % (e.g., +0.02 means price is 2% above MA)
+            return (close - series) / series.replace(0, 1e-9)
+            
+        # Ratio to Price (For ATR, Bollinger Width)
         elif method == "price_ratio":
             # Indicator / Price -> (e.g., ATR is 1.5% of the current stock price)
-            return series / df['Close'].replace(0, 1e-9)
+            return series / close.replace(0, 1e-9)
             
-        # 3. Z-Score (For Volume, or unbounded oscillators)
+        # Z-Score (For Volume, or unbounded oscillators)
         elif method == "z_score":
             rolling_mean = series.rolling(window=20).mean()
             rolling_std = series.rolling(window=20).std().replace(0, 1e-9)

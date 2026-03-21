@@ -1,49 +1,55 @@
-from typing import Dict, Any, List
+from typing import Dict, Any
 import pandas as pd
-import numpy as np
-from .base import Feature, FeatureOutput, LineOutput, FeatureResult
+from .base import Feature, LineOutput, FeatureResult
 
 class VWAP(Feature):
     @property
-    def name(self) -> str:
+    def name(self) -> str: 
         return "VWAP"
 
     @property
-    def description(self) -> str:
-        return "Volume Weighted Average Price with daily resets."
+    def description(self) -> str: 
+        return "Volume Weighted Average Price."
 
     @property
-    def category(self) -> str:
+    def category(self) -> str: 
         return "Volume & Profile"
 
     @property
     def parameters(self) -> Dict[str, Any]:
         return {
+            "normalize": "none",
             "color": "#00d8ff"
         }
 
     def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
-        # Create a temporary date column for grouping
+        norm_method = params.get("normalize", "none")
+        color = params.get("color", "#00d8ff")
+        
+        high = df['High'] if 'High' in df.columns else df['high']
+        low = df['Low'] if 'Low' in df.columns else df['low']
+        close = df['Close'] if 'Close' in df.columns else df['close']
+        volume = df['Volume'] if 'Volume' in df.columns else df['volume']
+        
         dates = df.index.date
+        tp = (high + low + close) / 3
+        v_tp = tp * volume
         
-        # Typical Price
-        tp = (df['High'] + df['Low'] + df['Close']) / 3
-        # Volume * TP
-        v_tp = tp * df['Volume']
-        
-        # Vectorized Daily VWAP using groupby and cumsum
         cum_v_tp = v_tp.groupby(dates).cumsum()
-        cum_v = df['Volume'].groupby(dates).cumsum()
-        
+        cum_v = volume.groupby(dates).cumsum()
         vwap = cum_v_tp / cum_v
         
         visuals = [
             LineOutput(
-                name="VWAP",
-                data=vwap.where(pd.notnull(vwap), None).tolist(),
-                color=params.get("color", "#00d8ff"),
+                name="VWAP", 
+                data=vwap.where(pd.notnull(vwap), None).tolist(), 
+                color=color, 
                 width=2
             )
         ]
         
-        return FeatureResult(visuals=visuals, data={"VWAP": vwap})
+        # Apply systematic normalization
+        final_data = self.normalize(df, vwap, norm_method)
+        
+        col_name = "Dist_VWAP" if norm_method == "pct_distance" else "VWAP"
+        return FeatureResult(visuals=visuals, data={col_name: final_data})

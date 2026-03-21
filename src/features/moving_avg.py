@@ -1,6 +1,6 @@
 from typing import Dict, Any, List
 import pandas as pd
-from .base import Feature, FeatureOutput, LineOutput, FeatureResult
+from .base import Feature, LineOutput, FeatureResult
 
 class MovingAverage(Feature):
     @property
@@ -19,13 +19,13 @@ class MovingAverage(Feature):
     def parameters(self) -> Dict[str, Any]:
         return {
             "period": 50,
-            "type": "SMA",  # Changed to a flat default string
+            "type": "SMA",
+            "normalize": "none",
             "color": "#ff9900"
         }
         
     @property
     def parameter_options(self) -> Dict[str, List[Any]]:
-        """GUI can read this to populate dropdown menus."""
         return {
             "type": ["SMA", "EMA"]
         }
@@ -34,20 +34,27 @@ class MovingAverage(Feature):
         period = int(params.get("period", 50))
         ma_type = params.get("type", "SMA")
         color = params.get("color", "#ff9900")
+        norm_method = params.get("normalize", "none")
         
+        close = df['Close'] if 'Close' in df.columns else df['close']
+        
+        # Calculate the requested type of Moving Average
         if ma_type == "EMA":
-            ma = df['Close'].ewm(span=period, adjust=False).mean()
+            ma = close.ewm(span=period, adjust=False).mean()
         else:
-            ma = df['Close'].rolling(window=period).mean()
-        
-        data_list = ma.where(pd.notnull(ma), None).tolist()
+            ma = close.rolling(window=period).mean()
         
         visuals = [
             LineOutput(
                 name=f"{ma_type}_{period}",
-                data=data_list,
+                data=ma.where(pd.notnull(ma), None).tolist(),
                 color=color,
                 width=2
             )
         ]
-        return FeatureResult(visuals=visuals, data={f"{ma_type}_{period}": ma})
+        
+        # Apply systematic normalization
+        final_data = self.normalize(df, ma, norm_method)
+        
+        col_name = f"Dist_{ma_type}_{period}" if norm_method == "pct_distance" else f"{ma_type}_{period}"
+        return FeatureResult(visuals=visuals, data={col_name: final_data})
