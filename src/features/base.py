@@ -97,6 +97,32 @@ class Feature(ABC):
         Default Y-axis padding (0.1 = 10% of data height).
         """
         return 0.1
+    
+    def normalize(self, df: pd.DataFrame, series: pd.Series, method: str) -> pd.Series:
+        """
+        Systematically normalizes raw indicator data for Machine Learning.
+        """
+        if method == "none" or not method:
+            return series
+            
+        # 1. Percentage Distance from Price (For MAs, VWAP, Support/Resistance)
+        elif method == "pct_distance":
+            # (Price - Indicator) / Indicator -> Output is a % (e.g., +0.02 means price is 2% above MA)
+            return (df['Close'] - series) / series.replace(0, 1e-9)
+            
+        # 2. Ratio to Price (For ATR, Bollinger Width)
+        elif method == "price_ratio":
+            # Indicator / Price -> (e.g., ATR is 1.5% of the current stock price)
+            return series / df['Close'].replace(0, 1e-9)
+            
+        # 3. Z-Score (For Volume, or unbounded oscillators)
+        elif method == "z_score":
+            rolling_mean = series.rolling(window=20).mean()
+            rolling_std = series.rolling(window=20).std().replace(0, 1e-9)
+            return (series - rolling_mean) / rolling_std
+            
+        else:
+            raise ValueError(f"Unknown normalization method: {method}")
 
     @abstractmethod
     def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
