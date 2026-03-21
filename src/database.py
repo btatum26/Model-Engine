@@ -1,5 +1,5 @@
-from sqlalchemy import create_engine, Column, String, Float, DateTime, Integer, UniqueConstraint
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine, Column, String, Float, DateTime, Integer, UniqueConstraint, Index, text
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 import pandas as pd
 import os
@@ -19,7 +19,10 @@ class OHLCV(Base):
     close = Column(Float)
     volume = Column(Float)
 
-    __table_args__ = (UniqueConstraint('ticker', 'timestamp', 'interval', name='_ticker_ts_interval_uc'),)
+    __table_args__ = (
+        UniqueConstraint('ticker', 'timestamp', 'interval', name='_ticker_ts_interval_uc'),
+        Index('idx_ticker_ts_interval', 'ticker', 'timestamp', 'interval'),
+    )
 
 class Database:
     def __init__(self, db_path="data/stocks.db"):
@@ -33,35 +36,57 @@ class Database:
             raise
 
     def save_data(self, df, ticker, interval):
-        """Saves a pandas DataFrame to the database."""
-        session = self.Session()
+        """Saves a pandas DataFrame to the database using an efficient bulk operation."""
+        if df.empty:
+            return
+
+        # Prepare DataFrame for bulk operation
+        # Map DataFrame columns to database columns
+        # yfinance columns: Open, High, Low, Close, Volume, (index: Timestamp/Date)
+        save_df = df.copy()
+        save_df['ticker'] = ticker
+        save_df['interval'] = interval
+        
+        # Reset index to get the timestamp as a column
+        save_df = save_df.reset_index()
+        
+        # Identify the timestamp column (yfinance uses 'Date' or 'Datetime' or 'Timestamp')
+        ts_col = next((c for c in save_df.columns if c.lower() in ['date', 'datetime', 'timestamp']), None)
+        if ts_col:
+            save_df = save_df.rename(columns={ts_col: 'timestamp'})
+        
+        # Rename other columns to match table schema
+        column_mapping = {
+            'Open': 'open',
+            'High': 'high',
+            'Low': 'low',
+            'Close': 'close',
+            'Volume': 'volume'
+        }
+        save_df = save_df.rename(columns=column_mapping)
+        
+        # Select only required columns
+        required_cols = ['ticker', 'timestamp', 'interval', 'open', 'high', 'low', 'close', 'volume']
+        save_df = save_df[required_cols]
+
         try:
-            for timestamp, row in df.iterrows():
-                # Simple upsert logic: check if exists
-                existing = session.query(OHLCV).filter_by(
-                    ticker=ticker, 
-                    timestamp=timestamp, 
-                    interval=interval
-                ).first()
+            with self.engine.begin() as conn:
+                # 1. Use to_sql to write to a temporary table
+                save_df.to_sql('temp_ohlcv', conn, if_exists='replace', index=False)
                 
-                if not existing:
-                    new_record = OHLCV(
-                        ticker=ticker,
-                        timestamp=timestamp,
-                        interval=interval,
-                        open=row['Open'],
-                        high=row['High'],
-                        low=row['Low'],
-                        close=row['Close'],
-                        volume=row['Volume']
-                    )
-                    session.add(new_record)
-            session.commit()
+                # 2. Bulk insert into main table from temp table using 'INSERT OR IGNORE'
+                insert_stmt = text("""
+                    INSERT OR IGNORE INTO ohlcv (ticker, timestamp, interval, open, high, low, close, volume)
+                    SELECT ticker, timestamp, interval, open, high, low, close, volume FROM temp_ohlcv
+                """)
+                conn.execute(insert_stmt)
+                
+                # 3. Clean up
+                conn.execute(text("DROP TABLE temp_ohlcv"))
         except Exception as e:
-            session.rollback()
-            print(f"Error saving data to database: {e}")
-        finally:
-            session.close()
+            print(f"Error bulk saving data: {e}")
+            # Fallback to slow method if necessary, or just log
+            raise
 
     def get_latest_timestamp(self, ticker, interval):
         """Returns the most recent timestamp for a ticker/interval or None."""

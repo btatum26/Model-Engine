@@ -4,6 +4,7 @@ from tqdm import tqdm
 import time
 import os
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from .engine import TradingEngine
 
 class DataSnapshot:
@@ -52,7 +53,6 @@ class DataSnapshot:
         final_list = sorted(list(set(cleaned_tickers)))
         
         # If we have too many, take the top 1000 (proxied by sorting, usually alphabetic here)
-        # Ideally, we'd sort by market cap, but that requires another API call.
         if len(final_list) > 1000:
             return final_list[:1000]
         
@@ -62,49 +62,70 @@ class DataSnapshot:
             
         return final_list
 
-    def run(self, period="10y"):
+    def _sync_ticker(self, ticker, intervals, period, six_months_ago):
+        """
+        Helper method to sync a single ticker across all intervals.
+        """
+        results = []
+        for interval in intervals:
+            try:
+                # Check if data is already up to date
+                latest_ts = self.engine.db.get_latest_timestamp(ticker, interval)
+                if latest_ts and latest_ts > six_months_ago:
+                    continue
+
+                # Adjust period for yfinance limits
+                current_period = period
+                if interval in ["1h", "4h"]:
+                    current_period = "2y"
+                elif interval in ["30m", "15m"]:
+                    current_period = "60d"
+                
+                retries = 3
+                success = False
+                while retries > 0 and not success:
+                    try:
+                        self.engine.sync_data(ticker, interval, period=current_period, quiet=True)
+                        success = True
+                    except Exception as e:
+                        retries -= 1
+                        if retries > 0:
+                            time.sleep(1)
+                
+                results.append((interval, success))
+            except Exception as e:
+                results.append((interval, False))
+        return ticker, results
+
+    def run(self, period="10y", max_workers=15):
         tickers = self.get_top_1000_tickers()
-        # All supported intervals
         intervals = ["1w", "1d", "4h"]
         six_months_ago = datetime.now() - timedelta(days=180)
         
-        print(f"Starting decade snapshot for {len(tickers)} tickers across {intervals}...")
+        print(f"Starting Multithreaded Snapshot for {len(tickers)} tickers (Workers: {max_workers})...")
         
-        pbar = tqdm(tickers, desc="Overall Progress", unit="ticker")
-        
-        for ticker in pbar:
-            try:
-                for interval in intervals:
-                    # Check if data is already up to date
-                    latest_ts = self.engine.db.get_latest_timestamp(ticker, interval)
-                    if latest_ts and latest_ts > six_months_ago:
-                        continue
-
-                    # Adjust period for yfinance limits
-                    # 1wk/1d: max
-                    # 1h/4h: 730d (2y)
-                    # 30m/15m: 60d
-                    current_period = period
-                    if interval in ["1h", "4h"]:
-                        current_period = "2y"
-                    elif interval in ["30m", "15m"]:
-                        current_period = "60d"
-                    
-                    retries = 3
-                    success = False
-                    while retries > 0 and not success:
-                        try:
-                            self.engine.sync_data(ticker, interval, period=current_period, quiet=True)
-                            success = True
-                        except Exception as e:
-                            retries -= 1
-                            if retries > 0:
-                                time.sleep(2)
-                            else:
-                                pbar.write(f"Failed to sync {ticker} ({interval}) after multiple attempts.")
-                    
-                    time.sleep(0.1) # Rate limit protection
-            except KeyboardInterrupt:
-                raise # Re-raise to catch in stock_bot.py
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all ticker sync tasks
+            future_to_ticker = {
+                executor.submit(self._sync_ticker, ticker, intervals, period, six_months_ago): ticker 
+                for ticker in tickers
+            }
+            
+            # Use tqdm to track overall progress
+            pbar = tqdm(total=len(tickers), desc="Syncing Tickers", unit="ticker")
+            
+            for future in as_completed(future_to_ticker):
+                ticker = future_to_ticker[future]
+                try:
+                    ticker_done, results = future.result()
+                    # Optional: Log failures if needed
+                    # if any(not success for interval, success in results):
+                    #     pbar.write(f"Partial failure for {ticker_done}")
+                except Exception as e:
+                    pbar.write(f"Error syncing {ticker}: {e}")
+                finally:
+                    pbar.update(1)
+            
+            pbar.close()
 
         print("\nSnapshot complete.")
