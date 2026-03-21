@@ -1,65 +1,53 @@
 from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
-from .base import Feature, FeatureOutput, LineOutput, LevelOutput, FeatureResult
+from .base import Feature, FeatureOutput, LineOutput, FeatureResult
 
-class RSI(Feature):
+class AverageTrueRange(Feature):
     @property
     def name(self) -> str:
-        return "RSI"
+        return "ATR"
 
     @property
     def description(self) -> str:
-        return "Relative Strength Index (Wilder's Smoothing)."
-
-    @property
-    def category(self) -> str:
-        return "Oscillators (Momentum)"
-
-    @property
-    def parameters(self) -> Dict[str, Any]:
-        return {
-            "period": 14,
-            "overbought": 70,
-            "oversold": 30,
-            "color": "#aaff00"
-        }
+        return "Average True Range. Measures absolute volatility."
 
     @property
     def target_pane(self) -> str:
         return "new"
 
     @property
-    def y_range(self) -> List[float]:
-        return [0, 100]
+    def category(self) -> str:
+        return "Volatility"
 
     @property
-    def y_padding(self) -> float:
-        return 0.05
+    def parameters(self) -> Dict[str, Any]:
+        return {
+            "period": 14,
+            "color": "#ff0000"
+        }
 
     def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
         period = int(params.get("period", 14))
-        ob = float(params.get("overbought", 70))
-        os = float(params.get("oversold", 30))
         
-        delta = df['Close'].diff()
+        high = df['High']
+        low = df['Low']
+        close_prev = df['Close'].shift(1)
         
-        # Wilder's Smoothing uses an exponential moving average with alpha = 1/period
-        gain = (delta.where(delta > 0, 0.0)).ewm(alpha=1/period, adjust=False).mean()
-        loss = (-delta.where(delta < 0, 0.0)).ewm(alpha=1/period, adjust=False).mean()
+        # Highly optimized NumPy matrix math
+        tr1 = high - low
+        tr2 = (high - close_prev).abs()
+        tr3 = (low - close_prev).abs()
         
-        rs = gain / loss
-        rsi = np.where(loss == 0, 100, 100 - (100 / (1 + rs)))
-        rsi = pd.Series(rsi, index=df.index)
+        tr = np.maximum(tr1, np.maximum(tr2, tr3))
+        atr = tr.rolling(window=period).mean()
         
         visuals = [
             LineOutput(
-                name=f"RSI_{period}",
-                data=rsi.where(pd.notnull(rsi), None).tolist(),
-                color=params.get("color", "#aaff00"),
+                name=f"ATR_{period}",
+                data=atr.where(pd.notnull(atr), None).tolist(),
+                color=params.get("color", "#ff0000"),
                 width=2
-            ),
-            LevelOutput(name="Overbought", min_price=ob, max_price=ob, color="#ff4444"),
-            LevelOutput(name="Oversold", min_price=os, max_price=os, color="#44ff44")
+            )
         ]
-        return FeatureResult(visuals=visuals, data={f"RSI_{period}": rsi})
+        return FeatureResult(visuals=visuals, data={f"ATR_{period}": atr})
