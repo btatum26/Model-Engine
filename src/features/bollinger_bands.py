@@ -9,7 +9,7 @@ class BollingerBands(Feature):
 
     @property
     def description(self) -> str:
-        return "Volatility bands based on Standard Deviation. Supports systematic normalization."
+        return "Volatility bands based on Standard Deviation. Supports Bollinger Width and systematic normalization."
 
     @property
     def category(self) -> str:
@@ -35,7 +35,7 @@ class BollingerBands(Feature):
         norm_method = params.get("normalize", "none")
         
         # Standardize OHLCV access
-        close = df['Close']
+        close = df['Close'] if 'Close' in df.columns else df['close']
         
         # Calculate Bollinger Bands math
         mid_band = close.rolling(window=period).mean()
@@ -43,6 +43,10 @@ class BollingerBands(Feature):
         
         upper_band = mid_band + (rolling_std * std_dev)
         lower_band = mid_band - (rolling_std * std_dev)
+        
+        # Bollinger Width: (Upper - Lower) / Mid
+        # Useful for identifying "squeezes"
+        width = (upper_band - lower_band) / mid_band.replace(0, 1e-9)
         
         # Prepare visuals for GUI (always raw prices)
         def clean(s): return s.where(pd.notnull(s), None).tolist()
@@ -80,6 +84,7 @@ class BollingerBands(Feature):
             f"{prefix}BB_Upper_{period}": norm_upper,
             f"{prefix}BB_Mid_{period}": norm_mid,
             f"{prefix}BB_Lower_{period}": norm_lower,
+            f"BB_Width_{period}": width
         }
         
         return FeatureResult(visuals=visuals, data=data_dict)
