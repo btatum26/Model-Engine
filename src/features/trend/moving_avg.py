@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import pandas as pd
 from ..base import Feature, LineOutput, FeatureResult, register_feature
 
@@ -31,7 +31,7 @@ class MovingAverage(Feature):
             "type": ["SMA", "EMA"]
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         period = int(params.get("period", 50))
         ma_type = params.get("type", "SMA")
         color = params.get("color", "#ff9900")
@@ -59,3 +59,23 @@ class MovingAverage(Feature):
         
         col_name = f"Dist_{ma_type}_{period}" if norm_method == "pct_distance" else f"{ma_type}_{period}"
         return FeatureResult(visuals=visuals, data={col_name: final_data})
+
+@register_feature("EMA")
+class EMA(MovingAverage):
+    @property
+    def name(self) -> str:
+        return "Exponential Moving Average"
+
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
+        params["type"] = "EMA"
+        return super().compute(df, params, cache)
+
+@register_feature("SMA")
+class SMA(MovingAverage):
+    @property
+    def name(self) -> str:
+        return "Simple Moving Average"
+
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
+        params["type"] = "SMA"
+        return super().compute(df, params, cache)

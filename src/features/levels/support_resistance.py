@@ -35,7 +35,7 @@ class SupportResistance(Feature):
             "method": ["ZigZag", "Savitzky-Golay", "Bill Williams"]
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         method = params.get("method", "Bill Williams")
         threshold = float(params.get("threshold_pct", 0.015))
         window = int(params.get("window", 3))

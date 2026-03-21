@@ -28,7 +28,7 @@ class ROC(Feature):
             "color": "#00ffaa"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         period = int(params.get("period", 12))
         norm_method = params.get("normalize", "none")
         color = params.get("color", "#00ffaa")

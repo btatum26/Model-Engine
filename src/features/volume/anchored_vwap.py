@@ -24,7 +24,7 @@ class AnchoredVWAP(Feature):
             "color": "#00d8ff"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         bars_back = int(params.get("anchor_bars_back", 100))
         color = params.get("color", "#00d8ff")
         norm_method = params.get("normalize", "none")

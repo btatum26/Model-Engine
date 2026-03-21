@@ -23,7 +23,7 @@ class VWAP(Feature):
             "color": "#00d8ff"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         norm_method = params.get("normalize", "none")
         color = params.get("color", "#00d8ff")
         

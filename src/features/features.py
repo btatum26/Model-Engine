@@ -13,49 +13,97 @@ def load_features():
     """
     base_dir = os.path.dirname(__file__)
     # Iterates through all submodules in the current package
-    for loader, module_name, is_pkg in pkgutil.walk_packages([base_dir], prefix="."):
+    for loader, module_name, is_pkg in pkgutil.walk_packages([base_dir], prefix="src.features."):
         if not is_pkg:
+            # Skip base and features itself to avoid circularity
+            if module_name.endswith(".base") or module_name.endswith(".features"):
+                continue
             try:
-                importlib.import_module(module_name, package=__package__)
+                importlib.import_module(module_name)
             except Exception as e:
-                print(f"Error loading feature module {module_name}: {e}")
+                # Silently fail if it's not a real feature module or has other issues
+                pass
 
 # Initial load to populate FEATURE_REGISTRY
 load_features()
 
-class FeatureOrchestrator:
+class FeatureCache:
     """
-    Handles validation, caching, and batch execution of features.
+    Dependency Resolver (Smart Caching).
+    Instantiated freshly on every backtest run.
     """
     def __init__(self):
-        self.shared_cache: Dict[str, pd.Series] = {}
+        # Internal dictionary to store computed pd.Series
+        self._memory: Dict[str, pd.Series] = {}
+
+    def _generate_key(self, feature_id: str, params: Dict[str, Any]) -> str:
+        """Generates a deterministic key like 'EMA_period12'"""
+        if not params:
+            return feature_id
+        # Sort parameters to ensure consistent key generation regardless of dictionary order
+        param_str = "_".join([f"{k}{v}" for k, v in sorted(params.items())])
+        return f"{feature_id}_{param_str}"
+
+    def get_series(self, feature_id: str, params: Dict[str, Any], df: pd.DataFrame) -> pd.Series:
+        """
+        Retrieves a series from memory, or computes and caches it if missing.
+        """
+        key = self._generate_key(feature_id, params)
+        
+        # Check cache
+        if key in self._memory:
+            return self._memory[key]
+            
+        # Validate existence
+        if feature_id not in FEATURE_REGISTRY:
+            raise ValueError(f"Dependency '{feature_id}' not found in registry.")
+        feature_cls = FEATURE_REGISTRY[feature_id]
+        feature_instance = feature_cls()
+        
+        # Pass 'self' so nested dependencies can also use the cache
+        result: FeatureResult = feature_instance.compute(df, params, self)
+        if not result.data:
+            raise ValueError(f"Feature '{feature_id}' returned no data.")
+            
+        # Cache all returned outputs (e.g., MACD returns macd_line and signal_line)
+        primary_series = None
+        for col_name, series in result.data.items():
+            self._memory[col_name] = series
+            if primary_series is None:
+                primary_series = series # Default to the first series added
+                
+        # Also map the specific deterministic key to the primary series
+        self._memory[key] = primary_series
+        return primary_series
+
+    def set_series(self, key: str, series: pd.Series):
+        """Allows the orchestrator to manually warm the cache with top-level features."""
+        self._memory[key] = series
+
+
+class FeatureOrchestrator:
+    """
+    Execution Batcher (Stateless).
+    Handles validation, caching, and batch execution of features.
+    """
+    # Removed __init__ with self.shared_cache to enforce strict statelessness.
 
     def validate_config(self, feature_config: List[Dict[str, Any]]):
-        """
-        Validates that all requested features exist and have valid parameters.
-        """
         for config in feature_config:
             feature_id = config.get("id")
             if not feature_id:
                 raise ValueError("Feature config missing 'id' field.")
-            
             if feature_id not in FEATURE_REGISTRY:
                 raise ValueError(f"Feature '{feature_id}' not found in registry.")
-            
-            # Additional validation (e.g., parameter types) could be added here
-            # by checking against the feature's parameter_options.
 
     def compute_features(self, df: pd.DataFrame, feature_config: List[Dict[str, Any]]) -> tuple[pd.DataFrame, List[Any]]:
-        """
-        Executes a batch of features and returns the updated DataFrame and visual outputs.
-        """
         self.validate_config(feature_config)
         
         computed_features = {}
         visuals_master_list = []
         
-        # Reset cache for a fresh run
-        self.shared_cache = {}
+        # Instantiate a fresh cache for this specific execution run
+        cache = FeatureCache()
 
         for config in feature_config:
             feature_id = config.get("id")
@@ -64,13 +112,16 @@ class FeatureOrchestrator:
             feature_cls = FEATURE_REGISTRY[feature_id]
             feature_instance = feature_cls()
             
-            # Compute feature
-            result: FeatureResult = feature_instance.compute(df, params, self.shared_cache)
+            # Compute feature, passing in the localized cache
+            result: FeatureResult = feature_instance.compute(df, params, cache)
             
-            # Collect data
+            # Collect data and warm the cache
             if result.data:
                 for col_name, series in result.data.items():
-                    computed_features[col_name] = series
+                    # Only append if we haven't already calculated it as a dependency
+                    if col_name not in computed_features:
+                        computed_features[col_name] = series
+                        cache.set_series(col_name, series)
             
             # Collect visuals
             if result.visuals:
@@ -81,11 +132,13 @@ class FeatureOrchestrator:
             new_features_df = pd.DataFrame(computed_features)
             df = pd.concat([df, new_features_df], axis=1)
             
+            # Drop duplicated columns in case user config requested a dependency explicitly
+            df = df.loc[:, ~df.columns.duplicated()]
+            
         return df, visuals_master_list
 
 # Global instance for easy access
 orchestrator = FeatureOrchestrator()
 
 def compute_all_features(df: pd.DataFrame, feature_config: List[Dict[str, Any]]):
-    """Convenience wrapper for the orchestrator."""
     return orchestrator.compute_features(df, feature_config)

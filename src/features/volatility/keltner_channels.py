@@ -28,26 +28,29 @@ class KeltnerChannels(Feature):
             "color_bands": "#ffaa00"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         ema_period = int(params.get("ema_period", 20))
         atr_period = int(params.get("atr_period", 10))
         multiplier = float(params.get("multiplier", 2.0))
         norm_method = params.get("normalize", "none")
         
-        high = df['High'] if 'High' in df.columns else df['high']
-        low = df['Low'] if 'Low' in df.columns else df['low']
-        close = df['Close'] if 'Close' in df.columns else df['close']
-        
-        # Center Line is an Exponential Moving Average of the closing price
-        center_line = close.ewm(span=ema_period, adjust=False).mean()
-        
-        # Average True Range (ATR) calculation for channel width
-        close_prev = close.shift(1)
-        tr1 = high - low
-        tr2 = (high - close_prev).abs()
-        tr3 = (low - close_prev).abs()
-        tr = np.maximum(tr1, np.maximum(tr2, tr3))
-        atr = tr.rolling(window=atr_period).mean()
+        # Calculate Center Line and ATR using Cache
+        if cache:
+            center_line = cache.get_series("EMA", {"period": ema_period}, df)
+            atr = cache.get_series("ATR", {"period": atr_period}, df)
+        else:
+            close = df['Close'] if 'Close' in df.columns else df['close']
+            high = df['High'] if 'High' in df.columns else df['high']
+            low = df['Low'] if 'Low' in df.columns else df['low']
+            
+            center_line = close.ewm(span=ema_period, adjust=False).mean()
+            
+            close_prev = close.shift(1)
+            tr1 = high - low
+            tr2 = (high - close_prev).abs()
+            tr3 = (low - close_prev).abs()
+            tr = np.maximum(tr1, np.maximum(tr2, tr3))
+            atr = tr.rolling(window=atr_period).mean()
         
         # Upper and Lower bands are offsets of the center line based on ATR
         upper_band = center_line + (multiplier * atr)

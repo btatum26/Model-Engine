@@ -4,6 +4,7 @@ import numpy as np
 from ..base import Feature, LineOutput, FeatureResult, register_feature
 
 @register_feature("AverageTrueRange")
+@register_feature("ATR")
 class AverageTrueRange(Feature):
     @property
     def name(self) -> str: 
@@ -29,7 +30,7 @@ class AverageTrueRange(Feature):
             "color": "#ff0000"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         period = int(params.get("period", 14))
         norm_method = params.get("normalize", "none")
         color = params.get("color", "#ff0000")

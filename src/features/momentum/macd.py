@@ -31,19 +31,28 @@ class MACD(Feature):
             "color_signal": "#ff9900"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         fast = int(params.get("fast_period", 12))
         slow = int(params.get("slow_period", 26))
         signal = int(params.get("signal_period", 9))
         norm_method = params.get("normalize", "none")
         
-        close = df['Close'] if 'Close' in df.columns else df['close']
-        
-        # Calculate MACD Components
-        ema_fast = close.ewm(span=fast, adjust=False).mean()
-        ema_slow = close.ewm(span=slow, adjust=False).mean()
+        # Calculate MACD Components using Cache
+        if cache:
+            ema_fast = cache.get_series("EMA", {"period": fast}, df)
+            ema_slow = cache.get_series("EMA", {"period": slow}, df)
+        else:
+            close = df['Close'] if 'Close' in df.columns else df['close']
+            ema_fast = close.ewm(span=fast, adjust=False).mean()
+            ema_slow = close.ewm(span=slow, adjust=False).mean()
         
         macd_line = ema_fast - ema_slow
+        
+        # Signal line is an EMA of the MACD line. 
+        # Since cache.get_series expects a feature registered in the registry, 
+        # and we don't have a feature that calculates EMA of an arbitrary series (only Close),
+        # we compute the signal line here manually or we could potentially register a "SignalEMA" feature.
+        # For now, let's keep it simple.
         signal_line = macd_line.ewm(span=signal, adjust=False).mean()
         histogram = macd_line - signal_line
         

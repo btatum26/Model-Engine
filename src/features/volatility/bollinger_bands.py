@@ -30,7 +30,7 @@ class BollingerBands(Feature):
             "color_mid": "#ffffff"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         period = int(params.get("period", 20))
         std_dev = float(params.get("std_dev", 2.0))
         norm_method = params.get("normalize", "none")
@@ -38,8 +38,12 @@ class BollingerBands(Feature):
         # Standardize OHLCV access
         close = df['Close'] if 'Close' in df.columns else df['close']
         
-        # Calculate Bollinger Bands math
-        mid_band = close.rolling(window=period).mean()
+        # Calculate Bollinger Bands math using Cache for SMA
+        if cache:
+            mid_band = cache.get_series("SMA", {"period": period}, df)
+        else:
+            mid_band = close.rolling(window=period).mean()
+            
         rolling_std = close.rolling(window=period).std()
         
         upper_band = mid_band + (rolling_std * std_dev)
