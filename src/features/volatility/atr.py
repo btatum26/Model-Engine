@@ -1,8 +1,9 @@
 from typing import Dict, Any
 import pandas as pd
 import numpy as np
-from ..base import Feature, LineOutput, FeatureResult
+from ..base import Feature, LineOutput, FeatureResult, register_feature
 
+@register_feature("AverageTrueRange")
 class AverageTrueRange(Feature):
     @property
     def name(self) -> str: 
@@ -28,7 +29,7 @@ class AverageTrueRange(Feature):
             "color": "#ff0000"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
         period = int(params.get("period", 14))
         norm_method = params.get("normalize", "none")
         color = params.get("color", "#ff0000")

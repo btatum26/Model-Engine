@@ -1,7 +1,8 @@
 from typing import Dict, Any
 import pandas as pd
-from ..base import Feature, LineOutput, FeatureResult
+from ..base import Feature, LineOutput, FeatureResult, register_feature
 
+@register_feature("VWAP")
 class VWAP(Feature):
     @property
     def name(self) -> str: 
@@ -22,7 +23,7 @@ class VWAP(Feature):
             "color": "#00d8ff"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
         norm_method = params.get("normalize", "none")
         color = params.get("color", "#00d8ff")
         

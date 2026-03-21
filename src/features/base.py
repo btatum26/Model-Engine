@@ -1,7 +1,23 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Type
 import pandas as pd
+
+# Global Registry
+FEATURE_REGISTRY: Dict[str, Type['Feature']] = {}
+
+def register_feature(name: str):
+    """
+    Decorator to register a Feature class into the global registry.
+    Usage:
+    @register_feature("RSI")
+    class RSI(Feature):
+        ...
+    """
+    def decorator(cls: Type['Feature']):
+        FEATURE_REGISTRY[name] = cls
+        return cls
+    return decorator
 
 # --- Output Types ---
 @dataclass
@@ -136,7 +152,7 @@ class Feature(ABC):
             raise ValueError(f"Unknown normalization method: {method}")
 
     @abstractmethod
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
         """
         Main logic. Receives OHLCV DataFrame and current parameters.
         Returns a FeatureResult containing visual outputs and raw data.

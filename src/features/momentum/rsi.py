@@ -1,8 +1,9 @@
 from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
-from ..base import Feature, LineOutput, LevelOutput, FeatureResult
+from ..base import Feature, LineOutput, LevelOutput, FeatureResult, register_feature
 
+@register_feature("RSI")
 class RSI(Feature):
     @property
     def name(self) -> str:
@@ -38,7 +39,7 @@ class RSI(Feature):
             "color": "#aaff00"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
         period = int(params.get("period", 14))
         ob = float(params.get("overbought", 70))
         os = float(params.get("oversold", 30))

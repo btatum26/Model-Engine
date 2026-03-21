@@ -1,7 +1,8 @@
 from typing import Dict, Any, List
 import pandas as pd
-from ..base import Feature, LineOutput, FeatureResult
+from ..base import Feature, LineOutput, FeatureResult, register_feature
 
+@register_feature("MACD")
 class MACD(Feature):
     @property
     def name(self) -> str:
@@ -30,7 +31,7 @@ class MACD(Feature):
             "color_signal": "#ff9900"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
         fast = int(params.get("fast_period", 12))
         slow = int(params.get("slow_period", 26))
         signal = int(params.get("signal_period", 9))

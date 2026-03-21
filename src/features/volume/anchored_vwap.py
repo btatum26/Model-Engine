@@ -1,7 +1,8 @@
 from typing import Dict, Any
 import pandas as pd
-from ..base import Feature, LineOutput, FeatureResult
+from ..base import Feature, LineOutput, FeatureResult, register_feature
 
+@register_feature("AnchoredVWAP")
 class AnchoredVWAP(Feature):
     @property
     def name(self) -> str:
@@ -23,7 +24,7 @@ class AnchoredVWAP(Feature):
             "color": "#00d8ff"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
         bars_back = int(params.get("anchor_bars_back", 100))
         color = params.get("color", "#00d8ff")
         norm_method = params.get("normalize", "none")

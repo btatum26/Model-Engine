@@ -1,8 +1,9 @@
 from typing import Dict, Any
 import pandas as pd
 import numpy as np
-from ..base import Feature, LineOutput, FeatureResult
+from ..base import Feature, LineOutput, FeatureResult, register_feature
 
+@register_feature("KeltnerChannels")
 class KeltnerChannels(Feature):
     @property
     def name(self) -> str:
@@ -27,7 +28,7 @@ class KeltnerChannels(Feature):
             "color_bands": "#ffaa00"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
         ema_period = int(params.get("ema_period", 20))
         atr_period = int(params.get("atr_period", 10))
         multiplier = float(params.get("multiplier", 2.0))

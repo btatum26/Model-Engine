@@ -1,8 +1,9 @@
 from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
-from ..base import Feature, LineOutput, FeatureResult
+from ..base import Feature, LineOutput, FeatureResult, register_feature
 
+@register_feature("ADX")
 class ADX(Feature):
     @property
     def name(self) -> str:
@@ -30,7 +31,7 @@ class ADX(Feature):
             "color_minus_di": "#ff4444"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
         period = int(params.get("period", 14))
         norm_method = params.get("normalize", "none")
         

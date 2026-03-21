@@ -3,8 +3,9 @@ import pandas as pd
 import numpy as np
 from scipy.signal import savgol_filter
 from sklearn.cluster import AgglomerativeClustering
-from ..base import Feature, FeatureOutput, LevelOutput, FeatureResult
+from ..base import Feature, FeatureOutput, LevelOutput, FeatureResult, register_feature
 
+@register_feature("SupportResistance")
 class SupportResistance(Feature):
     @property
     def name(self) -> str:
@@ -34,7 +35,7 @@ class SupportResistance(Feature):
             "method": ["ZigZag", "Savitzky-Golay", "Bill Williams"]
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
         method = params.get("method", "Bill Williams")
         threshold = float(params.get("threshold_pct", 0.015))
         window = int(params.get("window", 3))

@@ -1,7 +1,8 @@
 from typing import Dict, Any, List
 import pandas as pd
-from ..base import Feature, FeatureOutput, LineOutput, FeatureResult
+from ..base import Feature, FeatureOutput, LineOutput, FeatureResult, register_feature
 
+@register_feature("BollingerBands")
 class BollingerBands(Feature):
     @property
     def name(self) -> str:
@@ -29,7 +30,7 @@ class BollingerBands(Feature):
             "color_mid": "#ffffff"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
         period = int(params.get("period", 20))
         std_dev = float(params.get("std_dev", 2.0))
         norm_method = params.get("normalize", "none")

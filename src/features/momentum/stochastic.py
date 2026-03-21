@@ -1,7 +1,8 @@
 from typing import Dict, Any, List
 import pandas as pd
-from ..base import Feature, LineOutput, FeatureResult
+from ..base import Feature, LineOutput, FeatureResult, register_feature
 
+@register_feature("Stochastic")
 class Stochastic(Feature):
     @property
     def name(self) -> str:
@@ -37,7 +38,7 @@ class Stochastic(Feature):
             "color_d": "#ff00ff"
         }
 
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any]) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], shared_cache: Dict[str, pd.Series] = None) -> FeatureResult:
         k_period = int(params.get("k_period", 14))
         d_period = int(params.get("d_period", 3))
         norm_method = params.get("normalize", "none")
