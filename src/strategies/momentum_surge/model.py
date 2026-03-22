@@ -6,13 +6,12 @@ from src.controller import SignalModel
 
 class MomentumSurge(SignalModel):
     def generate_signals(self, df, params):
-        # Use auto-generated context for robustness and IDE support
+        # Use auto-generated context
         # RSI_14 will map to "RSI_14" in df
         rsi_val = df[ctx.RSI_14]
         
-        # Use ctx for hyperparameter keys as well
-        condition_long = (rsi_val < params[ctx.RSI_LOWER])
-        condition_short = (rsi_val > params[ctx.RSI_UPPER])
+        condition_long = (rsi_val < params['rsi_lower'])
+        condition_short = (rsi_val > params['rsi_upper'])
         
         signals = np.select(
             [condition_long, condition_short], 
