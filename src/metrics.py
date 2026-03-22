@@ -10,46 +10,38 @@ class Tearsheet:
     @staticmethod
     def calculate_metrics(df: pd.DataFrame, signals: pd.Series, friction: float = 0.001) -> Dict[str, Any]:
         """
-        Calculates performance metrics.
-        - T+1 Routing: Signals generated at [T] close execute at [T+1] open.
+        Calculates performance metrics using T+1 execution model.
+        Signals generated at [T] close execute at [T+1] open.
         """
         print(f"      - Processing {len(signals)} signals with T+1 execution model...")
-        # Vectorized returns calculation
-        # Return from today's open to tomorrow's open (next bar execution)
-        # Assuming df has 'Open' and signals are aligned with close of previous bar
-        returns = df['Open'].pct_change().shift(-1) # pct change from T open to T+1 open, shifted to align with T signal
         
-        # Apply signals
+        # Pct change from T open to T+1 open, shifted to align with T signal
+        returns = df['Open'].pct_change().shift(-1)
         strategy_returns = signals * returns
         
-        # Apply friction (slippage/fees) on every trade (signal change)
-        trades = signals.diff().fillna(0).abs() # Magnitude of signal change
+        # Apply friction on every trade (signal change)
+        trades = signals.diff().fillna(0).abs()
         strategy_returns -= trades * friction
         
-        # Equity Curve
         equity_curve = (1 + strategy_returns.fillna(0)).cumprod()
         
-        # Basic Metrics
         total_return = (equity_curve.iloc[-1] - 1) * 100
         total_trades = int((trades > 0).sum())
         
-        # Annualized Return (CAGR)
         days = (df.index.max() - df.index.min()).days
         if days > 0:
             cagr = ((equity_curve.iloc[-1]) ** (365.25 / days) - 1) * 100
         else:
             cagr = 0
             
-        # Win Rate
         trade_returns = strategy_returns[trades > 0]
         win_rate = (trade_returns > 0).mean() * 100 if not trade_returns.empty else 0
         
-        # Drawdown
         rolling_max = equity_curve.cummax()
         drawdown = (equity_curve - rolling_max) / rolling_max
         max_drawdown = drawdown.min() * 100
         
-        # Sharpe Ratio (Assuming 252 trading days for simplicity, can be adjusted)
+        # Sharpe Ratio assuming 252 trading days
         volatility = strategy_returns.std() * np.sqrt(252)
         sharpe = (strategy_returns.mean() * 252) / volatility if volatility > 0 else 0
 

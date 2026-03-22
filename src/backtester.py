@@ -5,7 +5,6 @@ import os
 import pandas as pd
 import itertools
 from typing import List, Dict, Any, Optional
-# Move from src/core/backtester.py to src/backtester.py
 from .features.features import compute_all_features
 
 class LocalBacktester:
@@ -25,7 +24,6 @@ class LocalBacktester:
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"model.py not found in {self.strategy_dir}")
 
-        # Unique module name to avoid collisions
         module_name = f"user_strat_{os.path.basename(self.strategy_dir)}"
         print(f"      - Loading strategy model: {module_name}...")
         
@@ -40,21 +38,17 @@ class LocalBacktester:
             sys.modules[module_name] = module
             spec.loader.exec_module(module)
         finally:
-            # Clean up sys.path to prevent pollution
             if self.strategy_dir in sys.path:
                 sys.path.remove(self.strategy_dir)
-            # Force-remove 'context' from global cache so the NEXT strategy loads its own
             if 'context' in sys.modules:
                 del sys.modules['context']
         
-        # SignalModel moved to controller.py
         from .controller import SignalModel
         for obj_name in dir(module):
             obj = getattr(module, obj_name)
             if isinstance(obj, type) and issubclass(obj, SignalModel) and obj is not SignalModel:
                 return obj()
         
-        # Fallback: PascalCase class name matching folder
         class_name = os.path.basename(self.strategy_dir).title().replace('_', '')
         if hasattr(module, class_name):
             return getattr(module, class_name)()
@@ -63,12 +57,10 @@ class LocalBacktester:
 
     def run(self, raw_data: pd.DataFrame, params: Optional[Dict[str, Any]] = None) -> pd.Series:
         """Runs the strategy once with given parameters."""
-        # Feature Generation (Phase 2)
         features_config = self.manifest.get('features', [])
         print(f"      - Computing {len(features_config)} features...")
         df_with_features, _ = compute_all_features(raw_data, features_config)
         
-        # Execute
         model = self._load_user_model()
         hyperparams = params if params is not None else self.manifest.get('hyperparameters', {})
         print(f"      - Running generate_signals with {len(hyperparams)} parameters.")
@@ -83,7 +75,6 @@ class LocalBacktester:
         if not param_bounds:
             return [self.run(raw_data)]
 
-        # Pre-calculate all features once
         features_config = self.manifest.get('features', [])
         print(f"      - Grid Search: Pre-calculating {len(features_config)} features...")
         df_with_features, _ = compute_all_features(raw_data, features_config)

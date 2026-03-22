@@ -1,7 +1,6 @@
 import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional, Union, Dict
-# Move from src/core/data_broker.py to src/data_broker.py
 from .database import Database
 from .fetcher import DataFetcher
 
@@ -17,20 +16,18 @@ class DataBroker:
     def get_data(self, ticker: str, interval: str, 
                  start: Optional[Union[str, datetime]] = None, 
                  end: Optional[Union[str, datetime]] = None) -> pd.DataFrame:
-        """
-        Smart Hydration Logic.
-        """
-        # Convert strings to datetime if needed
+        """Smart Hydration Logic."""
+        # Convert strings to datetime
         if isinstance(start, str):
             start = datetime.strptime(start, '%Y-%m-%d')
         if isinstance(end, str):
             end = datetime.strptime(end, '%Y-%m-%d')
         
-        # 1. Query Database
+        # Query Database
         print(f"      - Querying local database for {ticker} ({interval})...")
         df_db = self.db.get_data(ticker, interval, start, end)
         
-        # 2. Gap Analysis
+        # Gap Analysis
         needs_fetch = False
         if df_db.empty:
             print("      - Local database empty for this range.")
@@ -50,23 +47,20 @@ class DataBroker:
                 print(f"      - GAP DETECTED: Local data ends at {db_end}, requested end is {target_end}.")
                 needs_fetch = True
 
-        # 3. Fetch & Fill
+        # Fetch and fill missing data
         if needs_fetch:
             print(f"      - Syncing missing data from yfinance...")
-            # If we have NO data, fetch a default period or the requested range
             if df_db.empty:
                 fetch_period = "max" if not start else None
                 df_new = self.fetcher.fetch_historical(ticker, interval, period=fetch_period, start=start, end=end)
             else:
-                # Just fetch from last DB entry to now/end
                 last_ts = df_db.index.max()
                 df_new = self.fetcher.fetch_historical(ticker, interval, start=last_ts, end=end)
             
-            # 4. Cache
+            # Cache results
             if not df_new.empty:
                 print(f"      - Sync complete. Saving {len(df_new)} new bars to database...")
                 self.db.save_data(df_new, ticker, interval)
-                # Re-query to get the full combined range
                 df_db = self.db.get_data(ticker, interval, start, end)
             else:
                 print("      - Warning: yfinance returned no new data.")
@@ -75,14 +69,12 @@ class DataBroker:
     
     def sync_historical(self, ticker: str, interval: str) -> bool:
         """
-        A utility method. Forces a fetch of all missing historical data 
-        up to the current exact moment without running a backtest.
+        Forces a fetch of all missing historical data up to the current moment.
         """
         pass
         
     def get_cached_inventory(self) -> Dict:
         """
         Returns a dictionary of what is in the DB.
-        Format: {"AAPL": {"1h": {"min_date": "...", "max_date": "..."}}}
         """
         pass

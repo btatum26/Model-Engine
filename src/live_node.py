@@ -4,7 +4,6 @@ import json
 import importlib.util
 import sys
 import os
-# Move from src/core/live_node.py to src/live_node.py
 from .controller import SignalModel
 
 class LiveTradingNode:
@@ -16,19 +15,15 @@ class LiveTradingNode:
 
     def deploy(self):
         """Unzips the .strat file into a temporary directory and loads it."""
-        # We use a temporary directory that persists for the lifetime of the deployment
         self._temp_dir = tempfile.TemporaryDirectory()
         temp_path = self._temp_dir.name
         
-        # 1. Unzip the bundle
         with zipfile.ZipFile(self.strat_file_path, 'r') as zip_ref:
             zip_ref.extractall(temp_path)
         
-        # 2. Read Configuration
         with open(os.path.join(temp_path, "manifest.json"), 'r') as f:
             self.config = json.load(f)
             
-        # 3. Dynamically Load Logic
         module_name = f"live_strat_{os.path.basename(self.strat_file_path).replace('.', '_')}"
         model_path = os.path.join(temp_path, "model.py")
         
@@ -43,13 +38,11 @@ class LiveTradingNode:
             sys.modules[module_name] = module
             spec.loader.exec_module(module)
         finally:
-            # Clean up sys.path and context cache
             if temp_path in sys.path:
                 sys.path.remove(temp_path)
             if 'context' in sys.modules:
                 del sys.modules['context']
         
-        # SignalModel is now in controller.py
         for obj_name in dir(module):
             obj = getattr(module, obj_name)
             if isinstance(obj, type) and issubclass(obj, SignalModel) and obj is not SignalModel:
@@ -63,10 +56,7 @@ class LiveTradingNode:
         if not self.model:
             raise RuntimeError("Strategy not deployed.")
             
-        # Calculate signal
         signal = self.model.generate_signals(live_dataframe, self.config['hyperparameters'])
-        
-        # Extract the very last signal to execute
         current_signal = signal.iloc[-1]
         self._execute_trade(current_signal)
 

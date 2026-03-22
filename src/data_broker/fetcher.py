@@ -8,7 +8,7 @@ class DataFetcher:
     def __init__(self, proxies=None):
         self.proxies = proxies or []
         self.last_fetch_time = 0
-        self.rate_limit_delay = 1.0 # Default 1 second between requests
+        self.rate_limit_delay = 1.0
 
     def _get_proxy(self):
         return random.choice(self.proxies) if self.proxies else None
@@ -16,14 +16,11 @@ class DataFetcher:
     def fetch_historical(self, ticker, interval, period="max", start=None, end=None):
         """
         Fetches historical data from yfinance with rate limiting.
-        Intervals: 1w, 1d, 4h, 1h, 30m, 15m
         """
-        # Simple rate limiting
         elapsed = time.time() - self.last_fetch_time
         if elapsed < self.rate_limit_delay:
             time.sleep(self.rate_limit_delay - elapsed)
         
-        # Map our internal interval to yfinance interval
         mapping = {
             "1w": "1wk",
             "1d": "1d",
@@ -37,8 +34,6 @@ class DataFetcher:
         try:
             proxy = self._get_proxy()
             stock = yf.Ticker(ticker)
-            
-            # Note: yfinance handles proxies via Session or internal config in newer versions
             df = stock.history(interval=yf_interval, period=period, start=start, end=end)
             
             self.last_fetch_time = time.time()
@@ -47,7 +42,6 @@ class DataFetcher:
                 return pd.DataFrame()
 
             if interval == "4h":
-                # Resample 1h data to 4h
                 df = df.resample('4h', origin='start_day', closed='left', label='left').agg({
                     'Open': 'first',
                     'High': 'max',

@@ -10,7 +10,6 @@ class Bundler:
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"model.py not found in {strategy_dir}")
             
-        # syntax check
         py_compile.compile(model_path, doraise=True)
         
         strat_name = os.path.basename(os.path.normpath(strategy_dir))
@@ -18,11 +17,9 @@ class Bundler:
         bundle_path = os.path.join(output_dir, f"{strat_name}.strat")
         
         with zipfile.ZipFile(bundle_path, 'w', zipfile.ZIP_DEFLATED) as bundle:
-            # We explicitly only bundle the triad of files
             for file in ["manifest.json", "context.py", "model.py"]:
                 filepath = os.path.join(strategy_dir, file)
                 if os.path.exists(filepath):
-                    # Flatten structure inside the zip
                     bundle.write(filepath, file) 
                     
         return bundle_path
