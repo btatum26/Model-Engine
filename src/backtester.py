@@ -30,7 +30,6 @@ class LocalBacktester:
         spec = importlib.util.spec_from_file_location(module_name, model_path)
         module = importlib.util.module_from_spec(spec)
         
-        # Add strategy dir to sys.path so it can import context.py
         if self.strategy_dir not in sys.path:
             sys.path.insert(0, self.strategy_dir)
             
@@ -55,16 +54,34 @@ class LocalBacktester:
             
         raise TypeError(f"No SignalModel subclass found in {model_path}")
 
+    def _audit_nans(self, df: pd.DataFrame, feature_ids: List[str]):
+        """
+        Scans for NaN values in the feature columns and logs warnings.
+        """
+        for fid in feature_ids:
+            # We check the columns that start with the feature ID (handles multiple outputs)
+            cols = [c for c in df.columns if c.startswith(fid)]
+            for col in cols:
+                nan_count = df[col].isna().sum()
+                if nan_count > 0:
+                    print(f"      - WARNING: Feature '{col}' has {nan_count} NaN values in the requested window.")
+
     def run(self, raw_data: pd.DataFrame, params: Optional[Dict[str, Any]] = None) -> pd.Series:
         """Runs the strategy once with given parameters."""
         features_config = self.manifest.get('features', [])
         print(f"      - Computing {len(features_config)} features...")
-        df_with_features, _ = compute_all_features(raw_data, features_config)
+        df_full, _ = compute_all_features(raw_data, features_config)
+        
+        # The NaN Auditor & Padding Slice
+        # We assume the last 300 periods were padding (as per DataBroker)
+        # However, to be safe, we audit the WHOLE thing first, then slice.
+        feature_ids = [f['id'] for f in features_config]
+        self._audit_nans(df_full, feature_ids)
         
         model = self._load_user_model()
         hyperparams = params if params is not None else self.manifest.get('hyperparameters', {})
         print(f"      - Running generate_signals with {len(hyperparams)} parameters.")
-        signals = model.generate_signals(df_with_features, hyperparams)
+        signals = model.generate_signals(df_full, hyperparams)
         return signals
 
     def run_grid_search(self, raw_data: pd.DataFrame, param_bounds: Optional[Dict[str, List[Any]]] = None) -> List[pd.Series]:
@@ -77,7 +94,10 @@ class LocalBacktester:
 
         features_config = self.manifest.get('features', [])
         print(f"      - Grid Search: Pre-calculating {len(features_config)} features...")
-        df_with_features, _ = compute_all_features(raw_data, features_config)
+        df_full, _ = compute_all_features(raw_data, features_config)
+        
+        feature_ids = [f['id'] for f in features_config]
+        self._audit_nans(df_full, feature_ids)
         
         model = self._load_user_model()
         
@@ -90,7 +110,7 @@ class LocalBacktester:
         for i, p in enumerate(permutations):
             if (i+1) % max(1, len(permutations)//5) == 0:
                 print(f"      - Progress: {i+1}/{len(permutations)}...")
-            signals = model.generate_signals(df_with_features, p)
+            signals = model.generate_signals(df_full, p)
             param_str = ", ".join([f"{k}={v}" for k, v in p.items()])
             signals.name = f"{os.path.basename(self.strategy_dir)} ({param_str})"
             results.append(signals)
