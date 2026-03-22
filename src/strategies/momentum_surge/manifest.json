@@ -1,0 +1,24 @@
+{
+    "features": [
+        {
+            "id": "RSI",
+            "params": {
+                "period": 14
+            }
+        }
+    ],
+    "hyperparameters": {
+        "rsi_lower": 30,
+        "rsi_upper": 70
+    },
+    "parameter_bounds": {
+        "rsi_lower": [
+            20,
+            30
+        ],
+        "rsi_upper": [
+            70,
+            80
+        ]
+    }
+}
