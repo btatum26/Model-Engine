@@ -64,7 +64,36 @@ class Feature(ABC):
     """
     Abstract Base Class for all Stock Bot Features.
     """
-    
+    @staticmethod
+    def generate_column_name(feature_id: str, params: Dict[str, Any], output_name: Optional[str] = None) -> str:
+        """
+        Standardizes column naming across the system.
+        Example: RSI + {period: 14} -> RSI_14
+        Example: MACD + {fast: 12, slow: 26} + signal -> MACD_12_26_SIGNAL
+        """
+        # Prefix for normalized features
+        norm = params.get("normalize", "none")
+        prefix = "Norm_" if norm != "none" else ""
+        
+        # Identify core parameters (ignoring visual ones like color)
+        # We assume parameters that affect calculation are integers or floats
+        # and not strings like color or normalize
+        core_params = {k: v for k, v in params.items() if k not in ["color", "normalize", "overbought", "oversold"]}
+        
+        # Simple Case: If there's only a 'period' or 'window', just use that number
+        if len(core_params) == 1 and ("period" in core_params or "window" in core_params):
+            val = core_params.get("period") or core_params.get("window")
+            base = f"{feature_id}_{val}"
+        elif not core_params:
+            base = feature_id
+        else:
+            # Complex Case: Join all sorted core params
+            param_str = "_".join([f"{v}" for k, v in sorted(core_params.items())])
+            base = f"{feature_id}_{param_str}"
+            
+        suffix = f"_{output_name.upper()}" if output_name else ""
+        return f"{prefix}{base}{suffix}"
+
     @property
     def target_pane(self) -> str:
         """
