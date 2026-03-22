@@ -12,11 +12,13 @@ class Tearsheet:
         """
         Calculates performance metrics using T+1 execution model.
         Signals generated at [T] close execute at [T+1] open.
+        Returns are realized from [T+1] open to [T+2] open.
         """
-        print(f"      - Processing {len(signals)} signals with T+1 execution model...")
+        print(f"      - Processing {len(signals)} signals with T+1 execution model (shift -2)...")
         
-        # Pct change from T open to T+1 open, shifted to align with T signal
-        returns = df['Open'].pct_change().shift(-1)
+        # Pct change from T+1 open to T+2 open, shifted back to T
+        # This properly aligns the signal at T with its resulting outcome.
+        returns = df['Open'].pct_change().shift(-2)
         strategy_returns = signals * returns
         
         # Apply friction on every trade (signal change)
@@ -37,6 +39,11 @@ class Tearsheet:
         trade_returns = strategy_returns[trades > 0]
         win_rate = (trade_returns > 0).mean() * 100 if not trade_returns.empty else 0
         
+        # Profit Factor: Sum of Gains / Sum of Losses
+        gains = strategy_returns[strategy_returns > 0].sum()
+        losses = abs(strategy_returns[strategy_returns < 0].sum())
+        profit_factor = gains / losses if losses > 0 else float('inf')
+        
         rolling_max = equity_curve.cummax()
         drawdown = (equity_curve - rolling_max) / rolling_max
         max_drawdown = drawdown.min() * 100
@@ -50,6 +57,7 @@ class Tearsheet:
             "CAGR (%)": round(cagr, 2),
             "Max Drawdown (%)": round(max_drawdown, 2),
             "Win Rate (%)": round(win_rate, 2),
+            "Profit Factor": round(profit_factor, 2),
             "Total Trades": total_trades,
             "Sharpe Ratio": round(sharpe, 2),
             "equity_curve": equity_curve
