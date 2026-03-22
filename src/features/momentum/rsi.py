@@ -60,9 +60,11 @@ class RSI(Feature):
         rsi = np.where(loss == 0, 100, 100 - (100 / (1 + rs)))
         rsi = pd.Series(rsi, index=df.index)
         
+        col_name = self.generate_column_name("RSI", params)
+        
         visuals = [
             LineOutput(
-                name=f"RSI_{period}",
+                name=col_name,
                 data=rsi.where(pd.notnull(rsi), None).tolist(),
                 color=color,
                 width=2
@@ -74,5 +76,4 @@ class RSI(Feature):
         # Apply normalization to the bounded RSI series
         final_data = self.normalize(df, rsi, norm_method)
         
-        col_name = f"Norm_RSI_{period}" if norm_method != "none" else f"RSI_{period}"
         return FeatureResult(visuals=visuals, data={col_name: final_data})

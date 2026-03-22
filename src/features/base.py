@@ -95,6 +95,15 @@ class Feature(ABC):
         return f"{prefix}{base}{suffix}"
 
     @property
+    def outputs(self) -> List[str]:
+        """
+        List of raw data column suffixes produced by this feature.
+        Example: MACD returns ['macd', 'signal', 'hist']
+        Example: RSI returns [None] (primary output)
+        """
+        return [None]
+
+    @property
     def target_pane(self) -> str:
         """
         'main': Overlay on price chart.

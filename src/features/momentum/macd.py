@@ -21,6 +21,10 @@ class MACD(Feature):
         return "new"
 
     @property
+    def outputs(self) -> List[str]:
+        return [None, "signal", "hist"]
+
+    @property
     def parameters(self) -> Dict[str, Any]:
         return {
             "fast_period": 12,
@@ -37,7 +41,6 @@ class MACD(Feature):
         signal = int(params.get("signal_period", 9))
         norm_method = params.get("normalize", "none")
         
-        # Calculate MACD Components using Cache
         if cache:
             ema_fast = cache.get_series("EMA", {"period": fast}, df)
             ema_slow = cache.get_series("EMA", {"period": slow}, df)
@@ -47,26 +50,24 @@ class MACD(Feature):
             ema_slow = close.ewm(span=slow, adjust=False).mean()
         
         macd_line = ema_fast - ema_slow
-        
-        # Signal line is an EMA of the MACD line. 
-        # Since cache.get_series expects a feature registered in the registry, 
-        # and we don't have a feature that calculates EMA of an arbitrary series (only Close),
-        # we compute the signal line here manually or we could potentially register a "SignalEMA" feature.
-        # For now, let's keep it simple.
         signal_line = macd_line.ewm(span=signal, adjust=False).mean()
         histogram = macd_line - signal_line
         
         def clean(s): return s.where(pd.notnull(s), None).tolist()
         
+        col_macd = self.generate_column_name("MACD", params)
+        col_signal = self.generate_column_name("MACD", params, "signal")
+        col_hist = self.generate_column_name("MACD", params, "hist")
+        
         visuals = [
             LineOutput(
-                name=f"MACD_{fast}_{slow}",
+                name=col_macd,
                 data=clean(macd_line),
                 color=params.get("color_macd"),
                 width=2
             ),
             LineOutput(
-                name=f"Signal_{signal}",
+                name=col_signal,
                 data=clean(signal_line),
                 color=params.get("color_signal"),
                 width=1
@@ -79,9 +80,9 @@ class MACD(Feature):
         final_hist = self.normalize(df, histogram, norm_method)
         
         data_dict = {
-            f"MACD_{fast}_{slow}": final_macd,
-            f"MACD_Signal_{signal}": final_signal,
-            f"MACD_Hist_{fast}_{slow}": final_hist
+            col_macd: final_macd,
+            col_signal: final_signal,
+            col_hist: final_hist
         }
         
         return FeatureResult(visuals=visuals, data=data_dict)
