@@ -41,6 +41,10 @@ class DataFetcher:
             if df is None or df.empty:
                 return pd.DataFrame()
 
+            # Enforce UTC and remove awareness for database compatibility
+            if df.index.tz is not None:
+                df.index = df.index.tz_convert('UTC').tz_localize(None)
+            
             if interval == "4h":
                 df = df.resample('4h', origin='start_day', closed='left', label='left').agg({
                     'Open': 'first',

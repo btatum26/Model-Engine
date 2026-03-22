@@ -107,24 +107,31 @@ class Database:
             if end:
                 query = query.filter(OHLCV.timestamp <= end)
             
-            results = query.order_by(OHLCV.timestamp).all()
+            # Vectorized Read: Bypassing ORM loops for speed
+            df = pd.read_sql_query(query.statement, self.engine)
             session.close()
 
-            if not results:
+            if df.empty:
                 return pd.DataFrame()
 
-            data = [{
-                'Timestamp': r.timestamp,
-                'Open': r.open,
-                'High': r.high,
-                'Low': r.low,
-                'Close': r.close,
-                'Volume': r.volume
-            } for r in results]
-            
-            df = pd.DataFrame(data)
+            # Clean up column names to match system conventions
+            column_mapping = {
+                'timestamp': 'Timestamp',
+                'open': 'Open',
+                'high': 'High',
+                'low': 'Low',
+                'close': 'Close',
+                'volume': 'Volume'
+            }
+            df = df.rename(columns=column_mapping)
             df.set_index('Timestamp', inplace=True)
-            return df
+            
+            # Ensure the index is a DatetimeIndex
+            df.index = pd.to_datetime(df.index)
+            
+            # Select only the relevant OHLCV columns
+            return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+            
         except Exception as e:
             print(f"Error retrieving data from database: {e}")
             return pd.DataFrame()
