@@ -39,13 +39,15 @@ class VolumeZScore(Feature):
         
         def clean(s): return s.where(pd.notnull(s), None).tolist()
         
+        col_name = self.generate_column_name("VolumeZScore", params)
+        
         visuals = [
             LineOutput(
-                name=f"Vol_ZScore_{period}",
+                name=col_name,
                 data=clean(z_score),
                 color=color,
                 width=2
             )
         ]
         
-        return FeatureResult(visuals=visuals, data={f"Vol_ZScore_{period}": z_score})
+        return FeatureResult(visuals=visuals, data={col_name: z_score})

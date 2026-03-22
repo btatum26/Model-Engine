@@ -59,7 +59,7 @@ class AnchoredVWAP(Feature):
         
         visuals = [
             LineOutput(
-                name=f"AVWAP ({bars_back})",
+                name=self.generate_column_name("AnchoredVWAP", params),
                 data=vwap_series.where(pd.notnull(vwap_series), None).tolist(),
                 color=color,
                 width=2
@@ -69,5 +69,5 @@ class AnchoredVWAP(Feature):
         # Apply normalization for machine learning features
         final_data = self.normalize(df, vwap_series, norm_method)
         
-        col_name = f"Dist_AVWAP_{bars_back}" if norm_method == "pct_distance" else f"AVWAP_{bars_back}"
+        col_name = self.generate_column_name("AnchoredVWAP", params)
         return FeatureResult(visuals=visuals, data={col_name: final_data})

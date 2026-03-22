@@ -38,6 +38,10 @@ class Stochastic(Feature):
             "color_d": "#ff00ff"
         }
 
+    @property
+    def outputs(self) -> List[str]:
+        return ["k", "d"]
+
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         k_period = int(params.get("k_period", 14))
         d_period = int(params.get("d_period", 3))
@@ -57,15 +61,18 @@ class Stochastic(Feature):
         # Slow Stochastic (%D) calculation (Moving Average of %K)
         d_percent = k_percent.rolling(window=d_period).mean()
         
+        col_k = self.generate_column_name("Stochastic", params, "k")
+        col_d = self.generate_column_name("Stochastic", params, "d")
+
         visuals = [
             LineOutput(
-                name="%K", 
+                name=col_k, 
                 data=k_percent.where(pd.notnull(k_percent), None).tolist(), 
                 color=params.get("color_k"), 
                 width=1
             ),
             LineOutput(
-                name="%D", 
+                name=col_d, 
                 data=d_percent.where(pd.notnull(d_percent), None).tolist(), 
                 color=params.get("color_d"), 
                 width=1
@@ -76,7 +83,4 @@ class Stochastic(Feature):
         final_k = self.normalize(df, k_percent, norm_method)
         final_d = self.normalize(df, d_percent, norm_method)
         
-        col_k = "Norm_%K" if norm_method != "none" else "%K"
-        col_d = "Norm_%D" if norm_method != "none" else "%D"
-
         return FeatureResult(visuals=visuals, data={col_k: final_k, col_d: final_d})

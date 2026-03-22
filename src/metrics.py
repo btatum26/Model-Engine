@@ -52,6 +52,10 @@ class Tearsheet:
         volatility = strategy_returns.std() * np.sqrt(252)
         sharpe = (strategy_returns.mean() * 252) / volatility if volatility > 0 else 0
 
+        # Placeholder for Phase 3.5: Deflated Sharpe Ratio (DSR)
+        # TODO: Implement DSR logic to account for multiple testing bias.
+        dsr = 0.0
+
         return {
             "Total Return (%)": round(total_return, 2),
             "CAGR (%)": round(cagr, 2),
@@ -60,6 +64,7 @@ class Tearsheet:
             "Profit Factor": round(profit_factor, 2),
             "Total Trades": total_trades,
             "Sharpe Ratio": round(sharpe, 2),
+            "Deflated Sharpe Ratio": round(dsr, 2),
             "equity_curve": equity_curve
         }
 

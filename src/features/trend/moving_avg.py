@@ -45,9 +45,19 @@ class MovingAverage(Feature):
         else:
             ma = close.rolling(window=period).mean()
         
+        # Determine the feature ID for naming
+        # This ensures consistency with how the Alpha Engine registers these classes
+        feat_id = "MovingAverage"
+        if ma_type == "SMA" and self.__class__.__name__ == "SMA":
+            feat_id = "SMA"
+        elif ma_type == "EMA" and self.__class__.__name__ == "EMA":
+            feat_id = "EMA"
+            
+        col_name = self.generate_column_name(feat_id, params)
+
         visuals = [
             LineOutput(
-                name=f"{ma_type}_{period}",
+                name=col_name,
                 data=ma.where(pd.notnull(ma), None).tolist(),
                 color=color,
                 width=2
@@ -57,7 +67,6 @@ class MovingAverage(Feature):
         # Apply systematic normalization
         final_data = self.normalize(df, ma, norm_method)
         
-        col_name = f"Dist_{ma_type}_{period}" if norm_method == "pct_distance" else f"{ma_type}_{period}"
         return FeatureResult(visuals=visuals, data={col_name: final_data})
 
 @register_feature("EMA")

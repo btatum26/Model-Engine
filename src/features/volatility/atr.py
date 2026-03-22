@@ -54,7 +54,7 @@ class AverageTrueRange(Feature):
 
         visuals = [
             LineOutput(
-                name=f"ATR_{period}", 
+                name=self.generate_column_name("ATR", params), 
                 data=atr.where(pd.notnull(atr), None).tolist(), 
                 color=color, 
                 width=2
@@ -64,5 +64,5 @@ class AverageTrueRange(Feature):
         # Apply systematic normalization
         final_data = self.normalize(df, atr, norm_method)
 
-        col_name = f"Norm_ATR_{period}" if norm_method != "none" else f"ATR_{period}"
+        col_name = self.generate_column_name("ATR", params)
         return FeatureResult(visuals=visuals, data={col_name: final_data})

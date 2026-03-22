@@ -78,8 +78,17 @@ class Feature(ABC):
         # Identify core parameters (ignoring visual ones like color)
         # We assume parameters that affect calculation are integers or floats
         # and not strings like color or normalize
-        core_params = {k: v for k, v in params.items() if k not in ["color", "normalize", "overbought", "oversold"]}
+        ignored_keys = ["color", "normalize", "overbought", "oversold"]
+        core_params = {
+            k: v for k, v in params.items() 
+            if k not in ignored_keys and not k.startswith("color_")
+        }
         
+        # If the feature ID is already descriptive (like SMA or EMA), 
+        # remove the 'type' parameter from core_params to avoid redundancy (e.g., SMA_50_SMA)
+        if "type" in core_params and str(core_params["type"]).upper() == feature_id.upper():
+            del core_params["type"]
+
         # Simple Case: If there's only a 'period' or 'window', just use that number
         if len(core_params) == 1 and ("period" in core_params or "window" in core_params):
             val = core_params.get("period") or core_params.get("window")

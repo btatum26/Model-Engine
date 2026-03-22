@@ -30,6 +30,10 @@ class BollingerBands(Feature):
             "color_mid": "#ffffff"
         }
 
+    @property
+    def outputs(self) -> List[str]:
+        return ["upper", "mid", "lower", "width"]
+
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         period = int(params.get("period", 20))
         std_dev = float(params.get("std_dev", 2.0))
@@ -56,21 +60,26 @@ class BollingerBands(Feature):
         # Prepare visuals for GUI (always raw prices)
         def clean(s): return s.where(pd.notnull(s), None).tolist()
         
+        col_upper = self.generate_column_name("BollingerBands", params, "upper")
+        col_mid = self.generate_column_name("BollingerBands", params, "mid")
+        col_lower = self.generate_column_name("BollingerBands", params, "lower")
+        col_width = self.generate_column_name("BollingerBands", params, "width")
+        
         visuals = [
             LineOutput(
-                name=f"BB_Upper_{period}", 
+                name=col_upper, 
                 data=clean(upper_band), 
                 color=params.get("color_bands"), 
                 width=1
             ),
             LineOutput(
-                name=f"BB_Mid_{period}", 
+                name=col_mid, 
                 data=clean(mid_band), 
                 color=params.get("color_mid"), 
                 width=1
             ),
             LineOutput(
-                name=f"BB_Lower_{period}", 
+                name=col_lower, 
                 data=clean(lower_band), 
                 color=params.get("color_bands"), 
                 width=1
@@ -81,15 +90,13 @@ class BollingerBands(Feature):
         norm_upper = self.normalize(df, upper_band, norm_method)
         norm_mid = self.normalize(df, mid_band, norm_method)
         norm_lower = self.normalize(df, lower_band, norm_method)
-        
-        # Format keys for Alpha Engine
-        prefix = "Dist_" if norm_method == "pct_distance" else ""
+        norm_width = self.normalize(df, width, norm_method)
         
         data_dict = {
-            f"{prefix}BB_Upper_{period}": norm_upper,
-            f"{prefix}BB_Mid_{period}": norm_mid,
-            f"{prefix}BB_Lower_{period}": norm_lower,
-            f"BB_Width_{period}": width
+            col_upper: norm_upper,
+            col_mid: norm_mid,
+            col_lower: norm_lower,
+            col_width: norm_width
         }
         
         return FeatureResult(visuals=visuals, data=data_dict)

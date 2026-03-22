@@ -35,6 +35,10 @@ class SupportResistance(Feature):
             "method": ["ZigZag", "Savitzky-Golay", "Bill Williams"]
         }
 
+    @property
+    def outputs(self) -> List[str]:
+        return ["dist_to_support", "dist_to_resistance", "last_support_level", "last_resistance_level"]
+
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         method = params.get("method", "Bill Williams")
         threshold = float(params.get("threshold_pct", 0.015))
@@ -72,11 +76,17 @@ class SupportResistance(Feature):
         dist_to_supp = (df['Close'] - rolling_supp) / df['Close']
         dist_to_res = (rolling_res - df['Close']) / df['Close']
 
+        # Standardize column names
+        col_dist_supp = self.generate_column_name("SupportResistance", params, "dist_to_support")
+        col_dist_res = self.generate_column_name("SupportResistance", params, "dist_to_resistance")
+        col_last_supp = self.generate_column_name("SupportResistance", params, "last_support_level")
+        col_last_res = self.generate_column_name("SupportResistance", params, "last_resistance_level")
+
         data_dict = {
-            "Dist_to_Support": dist_to_supp.fillna(0.0),
-            "Dist_to_Resistance": dist_to_res.fillna(0.0),
-            "Last_Support_Level": rolling_supp.fillna(df['Close']),
-            "Last_Resistance_Level": rolling_res.fillna(df['Close'])
+            col_dist_supp: dist_to_supp.fillna(0.0),
+            col_dist_res: dist_to_res.fillna(0.0),
+            col_last_supp: rolling_supp.fillna(df['Close']),
+            col_last_res: rolling_res.fillna(df['Close'])
         }
 
         # GUI Visuals: Cluster recent pivots into significant price levels

@@ -41,9 +41,11 @@ class ROC(Feature):
         
         def clean(s): return s.where(pd.notnull(s), None).tolist()
         
+        col_name = self.generate_column_name("ROC", params)
+        
         visuals = [
             LineOutput(
-                name=f"ROC_{period}",
+                name=col_name,
                 data=clean(roc),
                 color=color,
                 width=2
@@ -53,5 +55,4 @@ class ROC(Feature):
         # Apply systematic normalization
         final_data = self.normalize(df, roc, norm_method)
         
-        col_name = f"ROC_{period}"
         return FeatureResult(visuals=visuals, data={col_name: final_data})

@@ -42,7 +42,7 @@ class VWAP(Feature):
         
         visuals = [
             LineOutput(
-                name="VWAP", 
+                name=self.generate_column_name("VWAP", params), 
                 data=vwap.where(pd.notnull(vwap), None).tolist(), 
                 color=color, 
                 width=2
@@ -52,5 +52,5 @@ class VWAP(Feature):
         # Apply systematic normalization
         final_data = self.normalize(df, vwap, norm_method)
         
-        col_name = "Dist_VWAP" if norm_method == "pct_distance" else "VWAP"
+        col_name = self.generate_column_name("VWAP", params)
         return FeatureResult(visuals=visuals, data={col_name: final_data})

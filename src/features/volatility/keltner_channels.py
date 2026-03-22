@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
 from ..base import Feature, LineOutput, FeatureResult, register_feature
@@ -28,6 +28,10 @@ class KeltnerChannels(Feature):
             "color_bands": "#ffaa00"
         }
 
+    @property
+    def outputs(self) -> List[str]:
+        return ["upper", "center", "lower"]
+
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         ema_period = int(params.get("ema_period", 20))
         atr_period = int(params.get("atr_period", 10))
@@ -56,21 +60,25 @@ class KeltnerChannels(Feature):
         upper_band = center_line + (multiplier * atr)
         lower_band = center_line - (multiplier * atr)
         
+        col_upper = self.generate_column_name("KeltnerChannels", params, "upper")
+        col_center = self.generate_column_name("KeltnerChannels", params, "center")
+        col_lower = self.generate_column_name("KeltnerChannels", params, "lower")
+
         visuals = [
             LineOutput(
-                name="KC_Upper", 
+                name=col_upper, 
                 data=upper_band.where(pd.notnull(upper_band), None).tolist(), 
                 color=params.get("color_bands"), 
                 width=1
             ),
             LineOutput(
-                name="KC_Center", 
+                name=col_center, 
                 data=center_line.where(pd.notnull(center_line), None).tolist(), 
                 color=params.get("color_center"), 
                 width=1
             ),
             LineOutput(
-                name="KC_Lower", 
+                name=col_lower, 
                 data=lower_band.where(pd.notnull(lower_band), None).tolist(), 
                 color=params.get("color_bands"), 
                 width=1
@@ -82,12 +90,10 @@ class KeltnerChannels(Feature):
         final_upper = self.normalize(df, upper_band, norm_method)
         final_lower = self.normalize(df, lower_band, norm_method)
         
-        col_prefix = "Dist_" if norm_method == "pct_distance" else ""
-        
         data_dict = {
-            f"{col_prefix}KC_Upper_{ema_period}": final_upper,
-            f"{col_prefix}KC_Center_{ema_period}": final_center,
-            f"{col_prefix}KC_Lower_{ema_period}": final_lower
+            col_upper: final_upper,
+            col_center: final_center,
+            col_lower: final_lower
         }
         
         return FeatureResult(visuals=visuals, data=data_dict)

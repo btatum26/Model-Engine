@@ -31,6 +31,10 @@ class ADX(Feature):
             "color_minus_di": "#ff4444"
         }
 
+    @property
+    def outputs(self) -> List[str]:
+        return [None, "plus_di", "minus_di"]
+
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         period = int(params.get("period", 14))
         norm_method = params.get("normalize", "none")
@@ -68,19 +72,25 @@ class ADX(Feature):
         
         def clean(s): return s.where(pd.notnull(s), None).tolist()
         
+        col_adx = self.generate_column_name("ADX", params)
+        col_plus = self.generate_column_name("ADX", params, "plus_di")
+        col_minus = self.generate_column_name("ADX", params, "minus_di")
+        
         visuals = [
-            LineOutput(name=f"ADX_{period}", data=clean(adx), color=params.get("color_adx"), width=2),
-            LineOutput(name="+DI", data=clean(plus_di), color=params.get("color_plus_di"), width=1),
-            LineOutput(name="-DI", data=clean(minus_di), color=params.get("color_minus_di"), width=1)
+            LineOutput(name=col_adx, data=clean(adx), color=params.get("color_adx"), width=2),
+            LineOutput(name=col_plus, data=clean(plus_di), color=params.get("color_plus_di"), width=1),
+            LineOutput(name=col_minus, data=clean(minus_di), color=params.get("color_minus_di"), width=1)
         ]
         
         # Apply systematic normalization
         final_adx = self.normalize(df, adx, norm_method)
+        final_plus = self.normalize(df, plus_di, norm_method)
+        final_minus = self.normalize(df, minus_di, norm_method)
         
         data_dict = {
-            f"ADX_{period}": final_adx,
-            f"Plus_DI_{period}": plus_di,
-            f"Minus_DI_{period}": minus_di
+            col_adx: final_adx,
+            col_plus: final_plus,
+            col_minus: final_minus
         }
         
         return FeatureResult(visuals=visuals, data=data_dict)

@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
 from ..base import Feature, LineOutput, FeatureResult, register_feature
@@ -28,6 +28,10 @@ class OBV(Feature):
             "color": "#00aaff"
         }
 
+    @property
+    def outputs(self) -> List[str]:
+        return [None, "sma_20"]
+
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         norm_method = params.get("normalize", "none")
         color = params.get("color", "#00aaff")
@@ -49,18 +53,18 @@ class OBV(Feature):
         obv_sma = obv.rolling(window=20).mean()
         final_obv_sma = self.normalize(df, obv_sma, norm_method)
         
+        col_name = self.generate_column_name("OBV", params)
+        col_sma = self.generate_column_name("OBV", params, "sma_20")
+
         visuals = [
             LineOutput(
-                name="OBV",
+                name=col_name,
                 data=obv.where(pd.notnull(obv), None).tolist(),
                 color=color,
                 width=2
             )
         ]
         
-        col_name = "Norm_OBV" if norm_method != "none" else "OBV"
-        col_sma = "Norm_OBV_SMA_20" if norm_method != "none" else "OBV_SMA_20"
-
         # Return primary and smoothed OBV data
         data_dict = {
             col_name: final_obv,
