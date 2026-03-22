@@ -1,19 +1,42 @@
-# Phase 3.5: Search & Validation Engine - Optimizer Core
-# Master router: Grid Search (<=5000) vs Optuna (>5000)
+from typing import Dict, Any
 
 class OptimizerCore:
-    def __init__(self):
+    """
+    Phase 3.5: Master Router for HPO (Hyperparameter Optimization).
+    Decides between Grid Search and Bayesian Optimization.
+    """
+    
+    def __init__(self, manifest: Dict[str, Any]):
+        self.manifest = manifest
+        # TODO: Parse parameter bounds and fitness targets (Sharpe, Sortino, Calmar).
+
+    def run(self):
+        """
+        Calculates total permutations (P) and routes to appropriate tier.
+        TODO: IF P <= 5000 -> Tier 1 (Fast Grid Search).
+        TODO: IF P > 5000 -> Tier 2 (Optuna Bayesian Optimization).
+        """
         pass
 
-    def optimize(self, search_space_size):
-        """Route to Grid Search or Optuna based on search space size."""
-        if search_space_size <= 5000:
-            return self._grid_search()
-        else:
-            return self._optuna_search()
-
-    def _grid_search(self):
+    def _phase_a_discovery(self):
+        """
+        Fast-Pass Vectorized Evaluation.
+        TODO: Use purely vectorized Pandas/Numpy operations for theoretical PnL.
+        TODO: Ignore Gap Slippage and Hysteresis for maximum throughput.
+        """
         pass
 
-    def _optuna_search(self):
+    def _phase_b_reality_check(self, optimal_params: Dict[str, Any]):
+        """
+        Stateful Simulation.
+        TODO: Route single config to backtester.py for full friction/hysteresis simulation.
+        """
+        pass
+
+    def fitness_function(self, metrics: Dict[str, Any]) -> float:
+        """
+        Objective function for optimization.
+        TODO: Ban 'Net Profit' as primary target.
+        TODO: Implement multi-objective optimization with penalty weights for Trade Churn.
+        """
         pass
