@@ -5,7 +5,8 @@ import os
 import pandas as pd
 import itertools
 from typing import List, Dict, Any, Optional
-from ..features.features import compute_all_features
+# Move from src/core/backtester.py to src/backtester.py
+from .features.features import compute_all_features
 
 class LocalBacktester:
     """
@@ -46,8 +47,8 @@ class LocalBacktester:
             if 'context' in sys.modules:
                 del sys.modules['context']
         
-        # Find the class that inherits from SignalModel
-        from .engine import SignalModel
+        # SignalModel moved to controller.py
+        from .controller import SignalModel
         for obj_name in dir(module):
             obj = getattr(module, obj_name)
             if isinstance(obj, type) and issubclass(obj, SignalModel) and obj is not SignalModel:

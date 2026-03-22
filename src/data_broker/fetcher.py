@@ -38,9 +38,8 @@ class DataFetcher:
             proxy = self._get_proxy()
             stock = yf.Ticker(ticker)
             
-            # Use proxy if available (yfinance supports proxy via requests)
-            # Note: yfinance doesn't always handle proxies perfectly in all versions
-            df = stock.history(interval=yf_interval, period=period, start=start, end=end, proxy=proxy)
+            # Note: yfinance handles proxies via Session or internal config in newer versions
+            df = stock.history(interval=yf_interval, period=period, start=start, end=end)
             
             self.last_fetch_time = time.time()
 

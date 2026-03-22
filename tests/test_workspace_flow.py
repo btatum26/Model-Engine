@@ -2,10 +2,10 @@ import os
 import pandas as pd
 import numpy as np
 import json
-from src.core.workspace import WorkspaceManager
-from src.core.backtester import LocalBacktester
-from src.core.bundler import Bundler
-from src.core.live_node import LiveTradingNode
+from src.workspace import WorkspaceManager
+from src.backtester import LocalBacktester
+from src.bundler import Bundler
+from src.live_node import LiveTradingNode
 
 # 1. Setup Strategy Workspace
 STRAT_DIR = "src/strategies/momentum_surge"
@@ -13,7 +13,7 @@ MODEL_PY_CONTENT = """
 import numpy as np
 import pandas as pd
 import context as ctx
-from src.core.engine import SignalModel
+from src.controller import SignalModel
 
 class MomentumSurge(SignalModel):
     def generate_signals(self, df, params):

@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 import context as ctx
-from src.core.engine import SignalModel
+from src.controller import SignalModel
 
 class MomentumSurge(SignalModel):
     def generate_signals(self, df, params):
