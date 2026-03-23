@@ -12,6 +12,8 @@ from .workspace import WorkspaceManager
 from .backtester import LocalBacktester
 from .metrics import Tearsheet
 from .optimization.optimizer_core import OptimizerCore
+from .logger import logger
+from .exceptions import StrategyError, ValidationError
 
 class ExecutionMode(str, Enum):
     TRAIN = "TRAIN"
@@ -35,42 +37,42 @@ class JobPayload(BaseModel):
     multi_asset_mode: MultiAssetMode = MultiAssetMode.BATCH
 
 class SignalModel(ABC):
-    """The strict interface for all user strategies (Phase 3)."""
+    """Interface for user-defined trading strategies."""
     
     @abstractmethod
     def train(self, df: pd.DataFrame, context: Any, params: dict) -> dict:
         """
-        Phase 3 Training Block. 
-        Returns an artifact dictionary (e.g., weights, thresholds).
+        Execute the training logic for the strategy.
+        Returns a dictionary of generated artifacts (e.g. weights, thresholds).
         """
         pass
 
     @abstractmethod
     def generate_signals(self, df: pd.DataFrame, context: Any, params: dict, artifacts: dict) -> pd.Series:
         """
-        Phase 3 Execution Block.
-        Must return a vectorized Pandas Series (float64) 
-        ranging from -1.0 (Short) to 1.0 (Long).
+        Execute signal generation logic.
+        Returns a Pandas Series with values between -1.0 and 1.0.
         """
         pass
 
 class ApplicationController:
-    """
-    The Master Orchestrator.
-    Wires together DataBroker, WorkspaceManager, Backtester, and Optimizer.
-    """
+    """Orchestrates high-level system operations including data, workspace, and execution."""
+    
     def __init__(self, strategies_dir: str = "src/strategies"):
         self.strategies_dir = strategies_dir
         self.broker = DataBroker()
 
     def execute_job(self, payload: Union[dict, JobPayload]) -> Any:
         """
-        Single entry point for all engine operations.
-        Validates the payload (via Pydantic) and routes to the appropriate pipeline.
+        Primary entry point for job execution.
+        Routes requests to backtesting, training, or signal generation pipelines.
         """
-        # Validation & Extraction
-        if isinstance(payload, dict):
-            payload = JobPayload(**payload)
+        try:
+            if isinstance(payload, dict):
+                payload = JobPayload(**payload)
+        except Exception as e:
+            logger.error(f"Invalid job payload: {e}")
+            raise ValidationError(f"Invalid job payload: {e}")
             
         strategy_name = payload.strategy
         assets = payload.assets
@@ -80,9 +82,10 @@ class ApplicationController:
 
         strat_path = os.path.normpath(os.path.join(self.strategies_dir, strategy_name))
         if not os.path.exists(strat_path):
-            raise FileNotFoundError(f"Strategy {strategy_name} not found at {strat_path}")
+            logger.error(f"Strategy path not found: {strat_path}")
+            raise StrategyError(f"Strategy {strategy_name} not found")
 
-        # Routing Logic
+        # Route to appropriate handler
         if mode == ExecutionMode.BACKTEST:
             return self._handle_backtest(
                 strat_path, 
@@ -106,97 +109,98 @@ class ApplicationController:
             )
         
         else:
-            raise ValueError(f"Unsupported mode: {mode}")
+            raise ValidationError(f"Unsupported execution mode: {mode}")
 
     def _handle_backtest(self, strat_path: str, assets: List[str], interval: str, 
                          start: Optional[str], end: Optional[str], multi_asset_mode: MultiAssetMode):
-        """
-        Handles BACKTEST pipeline.
-        """
+        """Executes the backtesting pipeline."""
         if len(assets) > 1 and multi_asset_mode == MultiAssetMode.PORTFOLIO:
-            # Future: Route to PortfolioBacktester
-            raise NotImplementedError("PORTFOLIO mode is not yet implemented.")
+            raise NotImplementedError("PORTFOLIO mode is not yet supported.")
 
-        # BATCH Mode (Independent runs for each asset)
         all_metrics = {}
         for ticker in assets:
-            print(f"\n[BACKTEST] Running {ticker} ({interval})...")
+            logger.info(f"Running backtest for {ticker} ({interval})")
             df_raw = self.broker.get_data(ticker, interval, start, end)
             
             if df_raw.empty:
-                print(f"      - WARNING: No data for {ticker}")
+                logger.warning(f"No data available for {ticker} in requested range.")
                 continue
 
-            backtester = LocalBacktester(strat_path)
-            signals = backtester.run(df_raw)
-            
-            metrics = Tearsheet.calculate_metrics(df_raw, signals)
-            all_metrics[ticker] = metrics
-            
-            print(f"      - {ticker} Backtest Complete.")
-            Tearsheet.print_summary(metrics)
+            try:
+                backtester = LocalBacktester(strat_path)
+                signals = backtester.run(df_raw)
+                
+                metrics = Tearsheet.calculate_metrics(df_raw, signals)
+                all_metrics[ticker] = metrics
+                
+                Tearsheet.print_summary(metrics)
+            except Exception as e:
+                logger.error(f"Backtest failed for {ticker}: {e}", exc_info=True)
+                all_metrics[ticker] = {"error": str(e)}
 
         return all_metrics
 
     def _handle_train(self, strat_path: str, assets: List[str], interval: str, 
                       timeframe: Timeframe, payload: JobPayload):
-        """
-        Handles TRAIN pipeline (Optimization).
-        """
-        print(f"\n[TRAIN] Initializing Optimizer for {len(assets)} assets...")
-        
-        # In this version, we use the first asset as the primary dataset reference
+        """Executes the optimization and training pipeline."""
         ticker = assets[0]
         dataset_ref = f"{ticker}_{interval}"
         
-        # Ensure data is loaded into cache
+        logger.info(f"Initializing optimization for {ticker}")
+        
+        # Ensure data is cached before optimization starts
         self.broker.get_data(ticker, interval, timeframe.start, timeframe.end)
 
-        # Load manifest
         manifest_path = os.path.join(strat_path, "manifest.json")
-        with open(manifest_path, 'r') as f:
-            manifest = json.load(f)
+        try:
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load manifest at {manifest_path}: {e}")
+            raise StrategyError(f"Could not load manifest for {strat_path}")
 
-        # Initialize OptimizerCore
-        optimizer = OptimizerCore(
-            strategy_path=strat_path,
-            dataset_ref=dataset_ref,
-            manifest=manifest,
-            ticker=ticker,
-            interval=interval,
-            start=timeframe.start,
-            end=timeframe.end
-        )
-        
-        return optimizer.run()
+        try:
+            optimizer = OptimizerCore(
+                strategy_path=strat_path,
+                dataset_ref=dataset_ref,
+                manifest=manifest,
+                ticker=ticker,
+                interval=interval,
+                start=timeframe.start,
+                end=timeframe.end
+            )
+            return optimizer.run()
+        except Exception as e:
+            logger.error(f"Optimization failed: {e}", exc_info=True)
+            raise StrategyError(f"Optimization failed: {e}")
 
     def _handle_signal_only(self, strat_path: str, assets: List[str], interval: str, 
                             start: Optional[str], end: Optional[str]):
-        """
-        Handles SIGNAL_ONLY pipeline (Inference).
-        """
+        """Executes the signal generation pipeline without full backtesting."""
         results = {}
         for ticker in assets:
-            print(f"\n[SIGNAL] Generating signal for {ticker}...")
+            logger.info(f"Generating signals for {ticker}")
             df_raw = self.broker.get_data(ticker, interval, start, end)
             
             if df_raw.empty:
                 results[ticker] = {"error": "No data found"}
                 continue
 
-            backtester = LocalBacktester(strat_path)
-            signals = backtester.run(df_raw)
-            
-            # Extract the most recent signal
-            last_signal = float(signals.iloc[-1])
-            timestamp = signals.index[-1].isoformat()
+            try:
+                backtester = LocalBacktester(strat_path)
+                signals = backtester.run(df_raw)
+                
+                last_signal = float(signals.iloc[-1])
+                timestamp = signals.index[-1].isoformat()
 
-            results[ticker] = {
-                "signal": last_signal,
-                "timestamp": timestamp,
-                "asset": ticker,
-                "mode": "SIGNAL_ONLY"
-            }
-            print(f"      - {ticker} Signal: {last_signal} at {timestamp}")
+                results[ticker] = {
+                    "signal": last_signal,
+                    "timestamp": timestamp,
+                    "asset": ticker,
+                    "mode": "SIGNAL_ONLY"
+                }
+            except Exception as e:
+                logger.error(f"Signal generation failed for {ticker}: {e}", exc_info=True)
+                results[ticker] = {"error": str(e)}
 
         return results

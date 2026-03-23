@@ -12,13 +12,14 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from src.controller import ExecutionMode, JobPayload, Timeframe, MultiAssetMode
 from src.workspace import WorkspaceManager
 
+# Define communication paths
 TRANSIT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../transit"))
 BEACON_FILE = os.path.join(TRANSIT_DIR, "api_beacon.json")
 
 class EngineGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Alpha Research Engine - Control Panel")
+        self.root.title("Research Engine - Control Panel")
         self.root.geometry("800x900")
         
         self.api_url = None
@@ -34,21 +35,26 @@ class EngineGUI:
         self._poll_jobs()
 
     def _setup_logging(self):
+        """Initializes the session log file."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.log_file = os.path.join(self.logs_dir, f"gui_log_{timestamp}.txt")
 
     def _log(self, message):
+        """Displays message in console and writes to log file."""
         timestamp = datetime.now().strftime("%H:%M:%S")
         formatted_message = f"[{timestamp}] {message}\n"
         self.console.insert(tk.END, formatted_message)
         self.console.see(tk.END)
-        with open(self.log_file, "a") as f:
-            f.write(formatted_message)
+        try:
+            with open(self.log_file, "a") as f:
+                f.write(formatted_message)
+        except Exception:
+            pass
 
     def connect_to_daemon(self):
-        """Reads the beacon file to locate the Linux Daemon."""
+        """Reads the beacon file to locate the compute daemon."""
         if not os.path.exists(BEACON_FILE):
-            self._show_offline_warning("Beacon file not found. Is the Linux daemon running?")
+            self._show_offline_warning("Beacon file not found. Ensure the daemon is running.")
             return
             
         try:
@@ -56,32 +62,33 @@ class EngineGUI:
                 beacon = json.load(f)
                 
             if beacon.get("status") != "online":
-                self._show_offline_warning("Daemon is marked as offline.")
+                self._show_offline_warning("Daemon status is offline.")
                 return
                 
             self.api_url = beacon.get("api_url")
             
-            # Verify actual connection
+            # Verify network connectivity
             res = requests.get(f"{self.api_url}/health", timeout=2)
             if res.status_code == 200:
-                self._log(f"✅ Connected to Daemon at {self.api_url}")
+                self._log(f"Connected to Daemon at {self.api_url}")
             else:
-                self._show_offline_warning("Daemon responded, but not healthy.")
+                self._show_offline_warning("Daemon responded with an error.")
                 
         except Exception as e:
-            self._show_offline_warning(f"Failed to connect: {str(e)}")
+            self._show_offline_warning(f"Connection failed: {str(e)}")
 
     def _show_offline_warning(self, msg):
+        """Helper to alert user of connectivity issues."""
         messagebox.showwarning("Daemon Disconnected", msg)
         self._log(f"Warning: {msg}")
         self.api_url = None
 
     def _create_widgets(self):
-        # --- Main Layout ---
+        """Main UI layout initialization."""
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # --- Section 1: Strategy Selector ---
+        # Strategy Selector
         selector_frame = ttk.LabelFrame(main_frame, text="Strategy Selector", padding="5")
         selector_frame.pack(fill=tk.X, pady=5)
 
@@ -92,9 +99,9 @@ class EngineGUI:
         self.strategy_dropdown.bind("<<ComboboxSelected>>", self._on_strategy_selected)
 
         ttk.Button(selector_frame, text="Refresh", command=self._refresh_strategies).pack(side=tk.LEFT, padx=5)
-        ttk.Button(selector_frame, text="Create New Strategy", command=self._create_new_strategy_popup).pack(side=tk.LEFT, padx=5)
+        ttk.Button(selector_frame, text="Create New", command=self._create_new_strategy_popup).pack(side=tk.LEFT, padx=5)
 
-        # --- Section 2: Strategy Configurator ---
+        # Strategy Configurator
         self.config_frame = ttk.LabelFrame(main_frame, text="Strategy Configurator", padding="5")
         self.config_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
@@ -113,7 +120,7 @@ class EngineGUI:
         self.config_canvas.pack(side="left", fill="both", expand=True)
         self.config_scrollbar.pack(side="right", fill="y")
 
-        # --- Section 3: Execution Routing ---
+        # Execution Routing
         routing_frame = ttk.LabelFrame(main_frame, text="Execution Routing", padding="5")
         routing_frame.pack(fill=tk.X, pady=5)
 
@@ -135,9 +142,9 @@ class EngineGUI:
         ttk.Button(button_frame, text="Sync Data", command=self._sync_data).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         ttk.Button(button_frame, text="Run Backtest", command=lambda: self.submit_job("BACKTEST")).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         ttk.Button(button_frame, text="Run Grid Search", command=lambda: self.submit_job("TRAIN")).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        ttk.Button(button_frame, text="Bundle Artifact", command=self._bundle_artifact).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        ttk.Button(button_frame, text="Bundle", command=self._bundle_artifact).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
 
-        # --- Section 4: Progress Tracker ---
+        # Progress Tracker
         progress_frame = ttk.Frame(main_frame, padding="5")
         progress_frame.pack(fill=tk.X, pady=5)
         
@@ -145,7 +152,7 @@ class EngineGUI:
         self.progress_bar = ttk.Progressbar(progress_frame, variable=self.progress_var, maximum=100)
         self.progress_bar.pack(fill=tk.X)
 
-        # --- Section 5: Output Console ---
+        # Output Console
         console_frame = ttk.LabelFrame(main_frame, text="Output Console", padding="5")
         console_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
@@ -153,6 +160,7 @@ class EngineGUI:
         self.console.pack(fill=tk.BOTH, expand=True)
 
     def _refresh_strategies(self):
+        """Scan directory for available strategy folders."""
         if not os.path.exists(self.strategies_dir):
             os.makedirs(self.strategies_dir)
         
@@ -164,6 +172,7 @@ class EngineGUI:
             self._on_strategy_selected()
 
     def _on_strategy_selected(self, event=None):
+        """Load manifest when a new strategy is chosen."""
         strategy = self.strategy_var.get()
         if not strategy:
             return
@@ -177,6 +186,7 @@ class EngineGUI:
             self._log(f"Warning: manifest.json not found for {strategy}")
 
     def _populate_configurator(self):
+        """Dynamically build the configuration form from manifest data."""
         for widget in self.scrollable_config.winfo_children():
             widget.destroy()
 
@@ -208,9 +218,10 @@ class EngineGUI:
         bounds = self.manifest.get("parameter_bounds", {})
         self.bounds_text.insert(tk.END, json.dumps(bounds, indent=4))
 
-        ttk.Button(self.scrollable_config, text="Save Manifest", command=self._save_manifest).pack(pady=10)
+        ttk.Button(self.scrollable_config, text="Save Changes", command=self._save_manifest).pack(pady=10)
 
     def _save_manifest(self):
+        """Update manifest.json with current form values."""
         strategy = self.strategy_var.get()
         if not strategy:
             return
@@ -243,6 +254,7 @@ class EngineGUI:
             messagebox.showerror("Error", f"Failed to save manifest: {e}")
 
     def _sync_data(self):
+        """Standardize local development environment."""
         strategy = self.strategy_var.get()
         if not strategy: return
         self._save_manifest()
@@ -272,10 +284,12 @@ class EngineGUI:
             self._log("Sync complete. context.py updated.")
         except Exception as e:
             self._log(f"Sync failed: {e}")
+            messagebox.showerror("Sync Error", str(e))
 
     def submit_job(self, mode):
+        """Send job request to the compute daemon."""
         if not self.api_url:
-            messagebox.showerror("Error", "Cannot submit: Daemon is disconnected.")
+            messagebox.showerror("Error", "Daemon is disconnected.")
             return
 
         strategy = self.strategy_var.get()
@@ -298,40 +312,35 @@ class EngineGUI:
             res = requests.post(f"{self.api_url}/submit", json=payload)
             if res.status_code == 200:
                 job_id = res.json().get("job_id")
-                self._log(f"Job Queued with ID: {job_id}")
+                self._log(f"Job Queued: {job_id}")
             else:
-                self._log(f"Failed to submit job: {res.text}")
+                self._log(f"Job submission failed: {res.text}")
         except Exception as e:
             messagebox.showerror("Network Error", str(e))
 
     def _poll_jobs(self):
-        """Polls the API for job statuses and updates progress."""
+        """Update job statuses periodically."""
         if self.api_url:
             try:
                 res = requests.get(f"{self.api_url}/api/v1/jobs", timeout=2)
                 if res.status_code == 200:
                     jobs = res.json()
                     if jobs:
-                        # Grab the latest job
                         latest_job = jobs[0]
-                        status = latest_job.get("status")
                         progress = latest_job.get("progress", 0.0)
-                        
                         self.progress_var.set(progress)
-                        
-                        # Very noisy, we could just log status changes. But for now just set progress.
-                        # self._log(f"Latest Job Status: {status} - {progress}%")
-            except Exception as e:
-                pass # Suppress polling errors to avoid log spam
+            except Exception:
+                pass 
                 
         self.root.after(2000, self._poll_jobs)
 
     def _bundle_artifact(self):
+        """Prepare strategy for export."""
         strategy = self.strategy_var.get()
         if not strategy: return
         
         try:
-            self._log(f"Bundling {strategy} locally...")
+            self._log(f"Bundling {strategy}...")
             strat_path = os.path.join(self.strategies_dir, strategy)
             export_path = "exports"
             from src.bundler import Bundler
@@ -339,8 +348,10 @@ class EngineGUI:
             self._log(f"Artifact created: {bundle_file}")
         except Exception as e:
             self._log(f"Bundling failed: {e}")
+            messagebox.showerror("Export Error", str(e))
 
     def _create_new_strategy_popup(self):
+        """New strategy creation wizard."""
         popup = tk.Toplevel(self.root)
         popup.title("Create New Strategy")
         popup.geometry("300x150")
@@ -361,15 +372,15 @@ class EngineGUI:
             os.makedirs(strat_path)
             
             manifest = {
-                "strategy_name": f"{name.replace('_', ' ').title()} - MA Crossover",
-                "description": "A basic trend-following strategy that goes long when a fast moving average crosses above a slow moving average, and short when it below.",
+                "strategy_name": f"{name.replace('_', ' ').title()}",
+                "description": "Baseline moving average crossover strategy.",
                 "parameters": {
                     "fast_window": {"type": "int", "default": 10, "min": 5, "max": 25, "step": 1},
                     "slow_window": {"type": "int", "default": 50, "min": 30, "max": 100, "step": 5}
                 },
                 "features": [
-                    {"id": "SMA_Fast", "module": "trend.moving_avg", "function": "calculate_sma", "params": {"window": 10}},
-                    {"id": "SMA_Slow", "module": "trend.moving_avg", "function": "calculate_sma", "params": {"window": 50}}
+                    {"id": "SMA_Fast", "params": {"window": 10}},
+                    {"id": "SMA_Slow", "params": {"window": 50}}
                 ]
             }
             with open(os.path.join(strat_path, "manifest.json"), 'w') as f:
@@ -383,27 +394,21 @@ from .context import Context
 class Model(SignalModel):
 
     def train(self, df: pd.DataFrame, context: Context, params: dict) -> dict:
-        \"\"\"
-        Phase 3 Dual-Method Architecture: The Training Block.
-        \"\"\"
+        \"\"\"Executes the training/optimization logic.\"\"\"
         return {}
 
     def generate_signals(self, df: pd.DataFrame, context: Context, params: dict, artifacts: dict) -> pd.Series:
-        \"\"\"
-        Phase 3 Dual-Method Architecture: The Execution Block.
-        \"\"\"
-        # 1. Extract the pre-calculated features
+        \"\"\"Vectorized signal generation logic.\"\"\"
         fast_ma = df[context.SMA_FAST]
         slow_ma = df[context.SMA_SLOW]
 
-        # 2. Vectorized Signal Logic (Fast > Slow = Long, Fast < Slow = Short)
+        # Logic: Fast > Slow = Long, Fast < Slow = Short
         signals = np.where(fast_ma > slow_ma, 1.0, -1.0)
         
-        # 3. Handle NaN values
+        # Valid data mask
         is_valid = fast_ma.notna() & slow_ma.notna()
         signals = np.where(is_valid, signals, 0.0)
 
-        # 4. Return as a Pandas Series matching the input index
         return pd.Series(signals, index=df.index, dtype=np.float64)
 """
             with open(os.path.join(strat_path, "model.py"), 'w') as f:
@@ -418,7 +423,7 @@ class Model(SignalModel):
             self.strategy_var.set(name)
             self._on_strategy_selected()
             
-            self._log(f"Created new strategy: {name}")
+            self._log(f"Created strategy: {name}")
             popup.destroy()
 
         ttk.Button(popup, text="Create", command=create).pack(pady=10)
