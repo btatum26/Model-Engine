@@ -18,39 +18,45 @@ class LocalBacktester:
         with open(self.manifest_path, 'r') as f:
             self.manifest = json.load(f)
 
-    def _load_user_model(self):
-        """Dynamically imports model.py from the strategy directory."""
+    def _load_user_model_and_context(self):
+        """Dynamically imports model.py and context.py from the strategy directory."""
         model_path = os.path.join(self.strategy_dir, "model.py")
+        context_module_path = os.path.join(self.strategy_dir, "context.py")
+        
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"model.py not found in {self.strategy_dir}")
 
-        module_name = f"user_strat_{os.path.basename(self.strategy_dir)}"
-        print(f"      - Loading strategy model: {module_name}...")
+        # Import context first so it's available for model.py
+        context_module_name = f"user_context_{os.path.basename(self.strategy_dir)}"
+        spec_ctx = importlib.util.spec_from_file_location(context_module_name, context_module_path)
+        context_module = importlib.util.module_from_spec(spec_ctx)
+        spec_ctx.loader.exec_module(context_module)
         
-        spec = importlib.util.spec_from_file_location(module_name, model_path)
+        # Look for the Context class
+        context_class = getattr(context_module, 'Context', None)
+
+        model_module_name = f"user_strat_{os.path.basename(self.strategy_dir)}"
+        print(f"      - Loading strategy model: {model_module_name}...")
+        
+        spec = importlib.util.spec_from_file_location(model_module_name, model_path)
         module = importlib.util.module_from_spec(spec)
         
+        # Temporarily add strategy_dir to sys.path to allow internal imports in model.py
         if self.strategy_dir not in sys.path:
             sys.path.insert(0, self.strategy_dir)
             
         try:
-            sys.modules[module_name] = module
+            sys.modules[model_module_name] = module
             spec.loader.exec_module(module)
         finally:
             if self.strategy_dir in sys.path:
                 sys.path.remove(self.strategy_dir)
-            if 'context' in sys.modules:
-                del sys.modules['context']
         
         from .controller import SignalModel
         for obj_name in dir(module):
             obj = getattr(module, obj_name)
             if isinstance(obj, type) and issubclass(obj, SignalModel) and obj is not SignalModel:
-                return obj()
-        
-        class_name = os.path.basename(self.strategy_dir).title().replace('_', '')
-        if hasattr(module, class_name):
-            return getattr(module, class_name)()
+                return obj(), context_class
             
         raise TypeError(f"No SignalModel subclass found in {model_path}")
 
@@ -72,16 +78,17 @@ class LocalBacktester:
         print(f"      - Computing {len(features_config)} features...")
         df_full, _, l_max = compute_all_features(raw_data, features_config)
         
-        # The NaN Auditor & Padding Slice
-        # We assume the last 300 periods were padding (as per DataBroker)
-        # However, to be safe, we audit the WHOLE thing first, then slice.
         feature_ids = [f['id'] for f in features_config]
         self._audit_nans(df_full, feature_ids)
         
-        model = self._load_user_model()
+        model, context = self._load_user_model_and_context()
         hyperparams = params if params is not None else self.manifest.get('hyperparameters', {})
-        print(f"      - Running generate_signals with {len(hyperparams)} parameters.")
-        signals = model.generate_signals(df_full, hyperparams)
+        
+        print(f"      - Training strategy...")
+        artifacts = model.train(df_full, context, hyperparams)
+        
+        print(f"      - Running generate_signals...")
+        signals = model.generate_signals(df_full, context, hyperparams, artifacts)
         return signals
 
     def run_grid_search(self, raw_data: pd.DataFrame, param_bounds: Optional[Dict[str, List[Any]]] = None) -> List[pd.Series]:
@@ -99,7 +106,7 @@ class LocalBacktester:
         feature_ids = [f['id'] for f in features_config]
         self._audit_nans(df_full, feature_ids)
         
-        model = self._load_user_model()
+        model, context = self._load_user_model_and_context()
         
         keys = list(param_bounds.keys())
         values = list(param_bounds.values())
@@ -110,7 +117,10 @@ class LocalBacktester:
         for i, p in enumerate(permutations):
             if (i+1) % max(1, len(permutations)//5) == 0:
                 print(f"      - Progress: {i+1}/{len(permutations)}...")
-            signals = model.generate_signals(df_full, p)
+                
+            artifacts = model.train(df_full, context, p)
+            signals = model.generate_signals(df_full, context, p, artifacts)
+            
             param_str = ", ".join([f"{k}={v}" for k, v in p.items()])
             signals.name = f"{os.path.basename(self.strategy_dir)} ({param_str})"
             results.append(signals)

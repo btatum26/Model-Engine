@@ -22,7 +22,6 @@ def evaluate_parameters_cpu(data_ref, params: dict, features_config: list, strat
     import ray
     
     # Step 1: Zero-copy read from Plasma Store
-    # If data_ref was passed as an ObjectRef, Ray dereferences it automatically.
     if isinstance(data_ref, ray.ObjectRef):
         df_raw = ray.get(data_ref)
     else:
@@ -32,11 +31,12 @@ def evaluate_parameters_cpu(data_ref, params: dict, features_config: list, strat
     strategy_path_added = False
     
     try:
-        # Step 2: Compute features dynamically (Strictly passing by reference, no .copy())
+        # Step 2: Compute features dynamically
         df_features, _, _ = compute_all_features(df_raw, features_config)
         
-        # Step 3: Load model.py dynamically
+        # Step 3: Load model.py and context.py dynamically
         model_path = os.path.join(strategy_path, "model.py")
+        context_path = os.path.join(strategy_path, "context.py")
         
         project_root = os.path.abspath(os.path.join(os.getcwd()))
         if project_root not in sys.path:
@@ -46,23 +46,32 @@ def evaluate_parameters_cpu(data_ref, params: dict, features_config: list, strat
             sys.path.insert(0, strategy_path)
             strategy_path_added = True
             
+        # Load context
+        spec_ctx = importlib.util.spec_from_file_location("strategy_context", context_path)
+        module_ctx = importlib.util.module_from_spec(spec_ctx)
+        spec_ctx.loader.exec_module(module_ctx)
+        context_class = getattr(module_ctx, 'Context', None)
+
+        # Load model
         spec = importlib.util.spec_from_file_location("strategy_worker_model", model_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         
         # Step 4: Instantiate the model
         model_instance = None
+        from src.controller import SignalModel
         for obj_name in dir(module):
             obj = getattr(module, obj_name)
-            if isinstance(obj, type) and hasattr(obj, "generate_signals") and obj_name != "SignalModel":
+            if isinstance(obj, type) and issubclass(obj, SignalModel) and obj is not SignalModel:
                 model_instance = obj()
                 break
         
         if not model_instance:
             raise ImportError(f"No valid SignalModel found in {model_path}")
             
-        # Step 5: Generate signals and calculate Phase A Vectorized PnL
-        signals = model_instance.generate_signals(df_features, params)
+        # Step 5: Train and Generate signals
+        artifacts = model_instance.train(df_features, context_class, params)
+        signals = model_instance.generate_signals(df_features, context_class, params, artifacts)
         
         returns = df_raw["close"].pct_change().fillna(0)
         strategy_returns = signals.shift(1).fillna(0) * returns

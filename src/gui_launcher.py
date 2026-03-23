@@ -153,12 +153,18 @@ class GuiLauncher:
         # Hyperparameters
         ttk.Label(self.scrollable_config, text="Hyperparameters", font=("", 10, "bold")).pack(anchor="w", pady=(10, 5))
         self.hp_entries = {}
-        hparams = self.manifest.get("hyperparameters", {})
+        # Support both new and old manifest formats for UI
+        hparams = self.manifest.get("hyperparameters", self.manifest.get("parameters", {}))
+        
         for key, val in hparams.items():
             frame = ttk.Frame(self.scrollable_config)
             frame.pack(fill=tk.X, padx=10, pady=2)
             ttk.Label(frame, text=key, width=20).pack(side=tk.LEFT)
-            var = tk.StringVar(value=str(val))
+            
+            # If val is a dict (new format), extract default
+            display_val = val.get("default", val) if isinstance(val, dict) else val
+            
+            var = tk.StringVar(value=str(display_val))
             entry = ttk.Entry(frame, textvariable=var)
             entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
             self.hp_entries[key] = var
@@ -173,7 +179,10 @@ class GuiLauncher:
         ttk.Label(self.scrollable_config, text="Parameter Bounds (JSON)", font=("", 10, "bold")).pack(anchor="w", pady=(10, 5))
         self.bounds_text = scrolledtext.ScrolledText(self.scrollable_config, height=5)
         self.bounds_text.pack(fill=tk.X, padx=10, pady=2)
-        self.bounds_text.insert(tk.END, json.dumps(self.manifest.get("parameter_bounds", {}), indent=4))
+        
+        # New format has bounds inside parameters, old has separate parameter_bounds
+        bounds = self.manifest.get("parameter_bounds", {})
+        self.bounds_text.insert(tk.END, json.dumps(bounds, indent=4))
 
         ttk.Button(self.scrollable_config, text="Save Manifest", command=self._save_manifest).pack(pady=10)
 
@@ -183,16 +192,13 @@ class GuiLauncher:
             return
 
         try:
-            # Reconstruct manifest
+            # Reconstruct manifest (Sticking to original engine format for compatibility)
             new_hparams = {}
             for key, var in self.hp_entries.items():
                 val = var.get()
-                # Try to convert to numeric if possible
                 try:
-                    if '.' in val:
-                        new_hparams[key] = float(val)
-                    else:
-                        new_hparams[key] = int(val)
+                    if '.' in val: new_hparams[key] = float(val)
+                    else: new_hparams[key] = int(val)
                 except ValueError:
                     new_hparams[key] = val
 
@@ -226,7 +232,22 @@ class GuiLauncher:
                 
                 strat_path = os.path.join(self.strategies_dir, strategy)
                 wm = WorkspaceManager(strat_path)
-                wm.refresh() # WorkspaceManager.refresh() generates context.py
+                
+                # Re-map new manifest format to old internal format if needed for WorkspaceManager
+                with open(wm.manifest_path, 'r') as f:
+                    manifest = json.load(f)
+                
+                features = manifest.get('features', [])
+                hparams = manifest.get('hyperparameters', {})
+                if not hparams and "parameters" in manifest:
+                    # Conversion from bootstrap format
+                    hparams = {k: v.get("default") if isinstance(v, dict) else v for k, v in manifest["parameters"].items()}
+                
+                bounds = manifest.get('parameter_bounds', {})
+                if not bounds and "parameters" in manifest:
+                    bounds = {k: [v.get("min"), v.get("max")] for k, v in manifest["parameters"].items() if isinstance(v, dict) and "min" in v}
+
+                wm.sync(features, hparams, bounds)
                 
                 self.queue.put(("PROGRESS", 100))
                 self.queue.put(("LOG", f"Sync complete. context.py updated."))
@@ -257,9 +278,6 @@ class GuiLauncher:
                     "timeframe": {"start": None, "end": None}
                 }
                 
-                # Mock high volume output redirection if needed, 
-                # but ApplicationController already prints to stdout.
-                # We could capture stdout, but for now we rely on explicit log calls.
                 results = self.controller.execute_job(payload)
                 
                 self.queue.put(("LOG", f"{mode} completed."))
@@ -307,34 +325,67 @@ class GuiLauncher:
             
             os.makedirs(strat_path)
             
-            # Boilerplate manifest.json
+            # 1. manifest.json (The Configuration)
             manifest = {
-                "features": [],
-                "hyperparameters": {},
-                "parameter_bounds": {}
+                "strategy_name": f"{name.replace('_', ' ').title()} - MA Crossover",
+                "description": "A basic trend-following strategy that goes long when a fast moving average crosses above a slow moving average, and short when it below.",
+                "parameters": {
+                    "fast_window": {"type": "int", "default": 10, "min": 5, "max": 25, "step": 1},
+                    "slow_window": {"type": "int", "default": 50, "min": 30, "max": 100, "step": 5}
+                },
+                "features": [
+                    {"id": "SMA_Fast", "module": "trend.moving_avg", "function": "calculate_sma", "params": {"window": 10}},
+                    {"id": "SMA_Slow", "module": "trend.moving_avg", "function": "calculate_sma", "params": {"window": 50}}
+                ]
             }
+            # Note: We use 'params' mapping to existing engine for immediate runnability
             with open(os.path.join(strat_path, "manifest.json"), 'w') as f:
                 json.dump(manifest, f, indent=4)
             
-            # Boilerplate model.py
-            model_content = """import pandas as pd
-import numpy as np
-import context as ctx
+            # 2. context.py (The IDE Helper)
+            # Will be auto-generated by WorkspaceManager.sync below
+            
+            # 3. model.py (The Brain)
+            model_content = """import numpy as np
+import pandas as pd
 from src.controller import SignalModel
+from .context import Context
 
-class MyStrategy(SignalModel):
-    def generate_signals(self, df: pd.DataFrame, params: dict) -> pd.Series:
-        # Boilerplate logic
-        signals = pd.Series(0.0, index=df.index)
-        return signals
+class Model(SignalModel):
+
+    def train(self, df: pd.DataFrame, context: Context, params: dict) -> dict:
+        \"\"\"
+        Phase 3 Dual-Method Architecture: The Training Block.
+        \"\"\"
+        return {}
+
+    def generate_signals(self, df: pd.DataFrame, context: Context, params: dict, artifacts: dict) -> pd.Series:
+        \"\"\"
+        Phase 3 Dual-Method Architecture: The Execution Block.
+        \"\"\"
+        # 1. Extract the pre-calculated features
+        fast_ma = df[context.SMA_FAST]
+        slow_ma = df[context.SMA_SLOW]
+
+        # 2. Vectorized Signal Logic (Fast > Slow = Long, Fast < Slow = Short)
+        signals = np.where(fast_ma > slow_ma, 1.0, -1.0)
+        
+        # 3. Handle NaN values
+        is_valid = fast_ma.notna() & slow_ma.notna()
+        signals = np.where(is_valid, signals, 0.0)
+
+        # 4. Return as a Pandas Series matching the input index
+        return pd.Series(signals, index=df.index, dtype=np.float64)
 """
             with open(os.path.join(strat_path, "model.py"), 'w') as f:
                 f.write(model_content)
             
-            # Initial context.py
-            with open(os.path.join(strat_path, "context.py"), 'w') as f:
-                f.write("# AUTO-GENERATED\n")
-            
+            # Run Sync to generate initial context.py and formal manifest
+            wm = WorkspaceManager(strat_path)
+            hparams = {k: v["default"] for k, v in manifest["parameters"].items()}
+            bounds = {k: [v["min"], v["max"]] for k, v in manifest["parameters"].items()}
+            wm.sync(manifest["features"], hparams, bounds)
+
             self._refresh_strategies()
             self.strategy_var.set(name)
             self._on_strategy_selected()

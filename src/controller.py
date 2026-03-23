@@ -35,11 +35,20 @@ class JobPayload(BaseModel):
     multi_asset_mode: MultiAssetMode = MultiAssetMode.BATCH
 
 class SignalModel(ABC):
-    """The strict interface for all user strategies."""
+    """The strict interface for all user strategies (Phase 3)."""
     
     @abstractmethod
-    def generate_signals(self, df: pd.DataFrame, params: dict) -> pd.Series:
+    def train(self, df: pd.DataFrame, context: Any, params: dict) -> dict:
         """
+        Phase 3 Training Block. 
+        Returns an artifact dictionary (e.g., weights, thresholds).
+        """
+        pass
+
+    @abstractmethod
+    def generate_signals(self, df: pd.DataFrame, context: Any, params: dict, artifacts: dict) -> pd.Series:
+        """
+        Phase 3 Execution Block.
         Must return a vectorized Pandas Series (float64) 
         ranging from -1.0 (Short) to 1.0 (Long).
         """
