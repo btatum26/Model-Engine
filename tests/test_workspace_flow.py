@@ -1,7 +1,12 @@
 import os
+import sys
 import pandas as pd
 import numpy as np
 import json
+
+# Add project root to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from src.workspace import WorkspaceManager
 from src.backtester import LocalBacktester
 from src.bundler import Bundler
@@ -86,7 +91,7 @@ def test_full_flow():
     
     # Mock latest data (with features pre-computed as assumed by node)
     from src.features.features import compute_all_features
-    df_with_features, _ = compute_all_features(df, node.config['features'])
+    df_with_features, _, l_max = compute_all_features(df, node.config['features'])
     
     node.on_market_tick(df_with_features)
     node.cleanup()

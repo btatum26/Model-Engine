@@ -70,7 +70,7 @@ class LocalBacktester:
         """Runs the strategy once with given parameters."""
         features_config = self.manifest.get('features', [])
         print(f"      - Computing {len(features_config)} features...")
-        df_full, _ = compute_all_features(raw_data, features_config)
+        df_full, _, l_max = compute_all_features(raw_data, features_config)
         
         # The NaN Auditor & Padding Slice
         # We assume the last 300 periods were padding (as per DataBroker)
@@ -94,7 +94,7 @@ class LocalBacktester:
 
         features_config = self.manifest.get('features', [])
         print(f"      - Grid Search: Pre-calculating {len(features_config)} features...")
-        df_full, _ = compute_all_features(raw_data, features_config)
+        df_full, _, l_max = compute_all_features(raw_data, features_config)
         
         feature_ids = [f['id'] for f in features_config]
         self._audit_nans(df_full, feature_ids)

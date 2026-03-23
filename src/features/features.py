@@ -96,25 +96,32 @@ class FeatureOrchestrator:
             if feature_id not in FEATURE_REGISTRY:
                 raise ValueError(f"Feature '{feature_id}' not found in registry.")
 
-    def compute_features(self, df: pd.DataFrame, feature_config: List[Dict[str, Any]]) -> tuple[pd.DataFrame, List[Any]]:
+    def compute_features(self, df: pd.DataFrame, feature_config: List[Dict[str, Any]]) -> tuple[pd.DataFrame, List[Any], int]:
         self.validate_config(feature_config)
-        
+
         computed_features = {}
         visuals_master_list = []
-        
+        l_max = 0
+        lookback_keys = ["window", "period", "slow", "fast", "lookback"]
+
         # Instantiate a fresh cache for this specific execution run
         cache = FeatureCache()
 
         for config in feature_config:
             feature_id = config.get("id")
             params = config.get("params", {})
-            
+
+            # Calculate l_max (absolute maximum lookback)
+            for k, v in params.items():
+                if k.lower() in lookback_keys and isinstance(v, (int, float)):
+                    l_max = max(l_max, int(v))
+
             feature_cls = FEATURE_REGISTRY[feature_id]
             feature_instance = feature_cls()
-            
+
             # Compute feature, passing in the localized cache
             result: FeatureResult = feature_instance.compute(df, params, cache)
-            
+
             # Collect data and warm the cache
             if result.data:
                 for col_name, series in result.data.items():
@@ -122,20 +129,20 @@ class FeatureOrchestrator:
                     if col_name not in computed_features:
                         computed_features[col_name] = series
                         cache.set_series(col_name, series)
-            
+
             # Collect visuals
             if result.visuals:
                 visuals_master_list.extend(result.visuals)
-        
+
         # Single-pass concatenation
         if computed_features:
             new_features_df = pd.DataFrame(computed_features)
             df = pd.concat([df, new_features_df], axis=1)
-            
+
             # Drop duplicated columns in case user config requested a dependency explicitly
             df = df.loc[:, ~df.columns.duplicated()]
-            
-        return df, visuals_master_list
+
+        return df, visuals_master_list, l_max
 
 # Global instance for easy access
 orchestrator = FeatureOrchestrator()
