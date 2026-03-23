@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+import subprocess
 import pandas as pd
 from src.controller import ApplicationController, JobPayload, ExecutionMode
 from src.logger import logger
@@ -8,14 +9,30 @@ from src.exceptions import EngineError
 
 def main():
     parser = argparse.ArgumentParser(description="Research Engine CLI")
-    parser.add_argument("mode", choices=["BACKTEST", "TRAIN", "SIGNAL"], help="Execution mode")
-    parser.add_argument("--strategy", required=True, help="Strategy folder name")
-    parser.add_argument("--ticker", required=True, help="Ticker symbol (e.g., AAPL)")
+    parser.add_argument("mode", nargs="?", choices=["BACKTEST", "TRAIN", "SIGNAL"], help="Execution mode")
+    parser.add_argument("--strategy", help="Strategy folder name")
+    parser.add_argument("--ticker", help="Ticker symbol (e.g., AAPL)")
     parser.add_argument("--interval", default="1h", help="Data interval (e.g., 1h, 1d)")
     parser.add_argument("--start", help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end", help="End date (YYYY-MM-DD)")
+    parser.add_argument("--gui", action="store_true", help="Launch the Graphical User Interface")
 
     args = parser.parse_args()
+
+    if args.gui:
+        logger.info("Launching GUI...")
+        gui_path = os.path.join("src", "gui_launcher.py")
+        subprocess.Popen([sys.executable, gui_path])
+        return
+
+    if not args.mode:
+        parser.print_help()
+        return
+
+    # Ensure required arguments are present for CLI modes
+    if not args.strategy or not args.ticker:
+        print("Error: --strategy and --ticker are required for CLI modes.")
+        sys.exit(1)
 
     # Map CLI modes to ExecutionMode enums
     mode_map = {

@@ -34,6 +34,9 @@ A modular platform for financial strategy development, backtesting, and optimiza
 Used for direct interaction with the engine for backtesting, training, and signal generation.
 
 ```bash
+# Launch the Graphical User Interface
+uv run python main.py --gui
+
 # Run a backtest
 uv run python main.py BACKTEST --strategy momentum_surge --ticker AAPL --interval 1h
 
@@ -48,6 +51,10 @@ uv run python main.py SIGNAL --strategy momentum_surge --ticker SPY
 A Tkinter-based dashboard for strategy management, configuration, and remote job submission.
 
 ```bash
+# Can be launched via the CLI
+uv run python main.py --gui
+
+# Or directly
 uv run python src/gui_launcher.py
 ```
 **Features:**

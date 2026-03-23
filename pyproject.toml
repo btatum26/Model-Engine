@@ -5,7 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi>=0.135.2",
+    "fastapi[standard]>=0.135.2",
     "joblib>=1.5.3",
     "numpy>=2.4.3",
     "optuna>=4.8.0",
