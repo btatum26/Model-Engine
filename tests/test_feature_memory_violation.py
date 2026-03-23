@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from src.features.base import Feature, FeatureResult, register_feature
 from src.features.features import compute_all_features
+from src.exceptions import FeatureError
 
 @register_feature("MemoryViolator")
 class MemoryViolator(Feature):
@@ -14,28 +15,25 @@ class MemoryViolator(Feature):
     def category(self): return "Test"
 
     def compute(self, df: pd.DataFrame, params: dict, cache) -> FeatureResult:
-        # This should trigger the Blast Shield if df is read-only
+        # In-place assignment that triggers the memory violation check
         df["violator"] = df["close"] * 2
         return FeatureResult(data={"violator": df["violator"]}, visuals=[])
 
 def test_feature_memory_violation_catch():
-    # Create a read-only DataFrame
     df = pd.DataFrame({"close": np.random.randn(100)})
     
-    # Make the underlying numpy array read-only (simulating Ray shared memory)
-    # Note: df.values.setflags(write=False) makes the underlying array read-only
+    # Simulate a read-only environment
     df.values.setflags(write=False)
     
     feature_config = [
         {"id": "MemoryViolator", "params": {}}
     ]
     
-    with pytest.raises(RuntimeError) as excinfo:
+    with pytest.raises(FeatureError) as excinfo:
         compute_all_features(df, feature_config)
     
-    assert "[MEMORY VIOLATION]" in str(excinfo.value)
+    assert "attempted to mutate the input DataFrame in place" in str(excinfo.value)
     assert "MemoryViolator" in str(excinfo.value)
-    assert "MUST NOT assign new columns directly to `df`" in str(excinfo.value)
 
 def test_feature_dependency_memory_violation_catch():
     @register_feature("DependencyViolator")
@@ -52,7 +50,6 @@ def test_feature_dependency_memory_violation_catch():
             cache.get_series("MemoryViolator", {}, df)
             return FeatureResult(data={"dummy": df["close"]}, visuals=[])
 
-    # Create a read-only DataFrame
     df = pd.DataFrame({"close": np.random.randn(100)})
     df.values.setflags(write=False)
     
@@ -60,9 +57,8 @@ def test_feature_dependency_memory_violation_catch():
         {"id": "DependencyViolator", "params": {}}
     ]
     
-    with pytest.raises(RuntimeError) as excinfo:
+    # Orchestrator catches the underlying FeatureError from get_series and re-raises
+    with pytest.raises(FeatureError) as excinfo:
         compute_all_features(df, feature_config)
     
-    assert "[MEMORY VIOLATION]" in str(excinfo.value)
-    assert "MemoryViolator" in str(excinfo.value)
-    assert "feature dependency" in str(excinfo.value).lower()
+    assert "Feature computation failed for DependencyViolator" in str(excinfo.value)

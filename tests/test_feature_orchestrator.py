@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from src.features.features import FeatureOrchestrator, FeatureCache
 from src.features.base import Feature, FeatureResult, register_feature, FEATURE_REGISTRY
+from src.exceptions import FeatureError
 
 # Mock feature for testing
 @register_feature("mock_feature")
@@ -68,7 +69,7 @@ def test_feature_orchestrator_compute(orchestrator, sample_df):
 
 def test_feature_blast_shield(orchestrator, sample_df):
     config = [{"id": "bad_feature", "params": {}}]
-    with pytest.raises(RuntimeError, match="MEMORY VIOLATION"):
+    with pytest.raises(FeatureError, match="attempted to mutate the input DataFrame in place"):
         orchestrator.compute_features(sample_df, config)
 
 def test_feature_dependency(orchestrator, sample_df):

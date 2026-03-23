@@ -58,7 +58,8 @@ class LocalBacktester:
             for obj_name in dir(module):
                 obj = getattr(module, obj_name)
                 if isinstance(obj, type) and issubclass(obj, SignalModel) and obj is not SignalModel:
-                    return obj(), context_class
+                    # Instantiate both model and context
+                    return obj(), (context_class() if context_class else None)
                     
             raise StrategyError(f"No valid SignalModel subclass found in {model_path}")
         except Exception as e:

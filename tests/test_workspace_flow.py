@@ -17,7 +17,6 @@ STRAT_DIR = "src/strategies/momentum_surge"
 MODEL_PY_CONTENT = """
 import numpy as np
 import pandas as pd
-import context as ctx
 from src.controller import SignalModel
 
 class MomentumSurge(SignalModel):
@@ -26,8 +25,8 @@ class MomentumSurge(SignalModel):
 
     def generate_signals(self, df, context, params, artifacts):
         # Use auto-generated context
-        # RSI_14 will map to "RSI_14" in df
-        rsi_val = df[context.RSI_14]
+        # RSI will map to "RSI_14" in df
+        rsi_val = df[context.RSI]
         
         condition_long = (rsi_val < params['rsi_lower'])
         condition_short = (rsi_val > params['rsi_upper'])
