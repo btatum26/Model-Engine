@@ -2,11 +2,16 @@ import argparse
 import sys
 import os
 import json
+import tkinter as tk
 from src.controller import ApplicationController, JobPayload, Timeframe
+from src.gui_launcher import GuiLauncher
 
 def main():
     parser = argparse.ArgumentParser(description="Vectorized Alpha Research Engine")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # GUI command
+    subparsers.add_parser("gui", help="Launch the graphical control panel")
 
     # Execute command
     exec_parser = subparsers.add_parser("execute", help="Execute a strategy job")
@@ -28,6 +33,21 @@ def main():
     if not args.command:
         parser.print_help()
         sys.exit(0)
+
+    if args.command == "gui":
+        print("\n--- Vectorized Alpha Research Engine ---")
+        print("Launching GUI Control Panel...")
+        print("----------------------------------------")
+        try:
+            root = tk.Tk()
+            app = GuiLauncher(root)
+            root.mainloop()
+        except Exception as e:
+            print(f"\nERROR: GUI launch failed: {e}")
+            if "no display name" in str(e).lower() or "couldn't connect to display" in str(e).lower():
+                print("HINT: Ensure an X11 server is running or you are in a GUI-capable environment.")
+            sys.exit(1)
+        return
 
     controller = ApplicationController()
 
