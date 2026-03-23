@@ -2,30 +2,26 @@ import os
 import sys
 import json
 import pandas as pd
-import ray
 import itertools
 import importlib.util
 from typing import Dict, Any, List, Optional
+from joblib import Parallel, delayed
+import optuna
 
 from ..features.features import compute_all_features
 from ..backtester import LocalBacktester
-from .ray_cluster import RayClusterManager
-from .local_cache import LocalCache
+from .local_cache import LocalCache, stage_data_to_shm, load_data_from_shm
 from ..data_broker.data_broker import DataBroker
 
-@ray.remote(num_cpus=1)
-def evaluate_parameters_cpu(data_ref, params: dict, features_config: list, strategy_path: str) -> dict:
-    """Isolated trial execution on a Ray worker."""
+def evaluate_parameters_joblib(params: dict, features_config: list, strategy_path: str) -> dict:
+    """Isolated trial execution for joblib workers."""
     import sys
     import os
     import importlib.util
-    import ray
-    
-    # Step 1: Zero-copy read from Plasma Store
-    if isinstance(data_ref, ray.ObjectRef):
-        df_raw = ray.get(data_ref)
-    else:
-        df_raw = data_ref
+    from src.optimization.local_cache import load_data_from_shm
+    from src.features.features import compute_all_features
+
+    df_raw = load_data_from_shm()
     
     project_root_added = False
     strategy_path_added = False
@@ -90,11 +86,11 @@ def evaluate_parameters_cpu(data_ref, params: dict, features_config: list, strat
         if project_root_added and project_root in sys.path:
             sys.path.remove(project_root)
 
+
 class OptimizerCore:
-    """Master Router for HPO. Orchestrates distributed trials via Ray."""
+    """Master Router for HPO. Orchestrates distributed trials via Joblib/Optuna."""
     
-    # Circuit Breaker Limit (Reduced for CPU-bound efficiency)
-    PERMUTATION_LIMIT = 1000 
+    PERMUTATION_LIMIT = 5000 
     
     def __init__(self, strategy_path: str, dataset_ref: str, manifest: dict, 
                  ticker: str = None, interval: str = None, start: str = None, end: str = None):
@@ -106,19 +102,19 @@ class OptimizerCore:
         self.start = start
         self.end = end
         
-        self.cluster_manager = RayClusterManager()
         self.local_cache = LocalCache()
         self.broker = DataBroker()
 
     def run(self):
         print(f"      - Starting Optimizer run for {self.dataset_ref}...")
         
-        self.cluster_manager.initialize_cluster()
         df = self.broker.get_data(self.ticker, self.interval, self.start, self.end)
-        data_ref = self.local_cache.load_to_ram(self.dataset_ref, df)
+        
+        # Stage to dev/shm
+        self.local_cache.load_to_ram(self.dataset_ref, df)
         
         # Phase A: Discovery routing based on permutations
-        optimal_params = self._phase_a_discovery(data_ref)
+        optimal_params = self._phase_a_discovery()
         
         self.local_cache.clear_cache(self.dataset_ref)
         
@@ -131,45 +127,89 @@ class OptimizerCore:
             "metrics": final_metrics
         }
 
-    def _phase_a_discovery(self, data_ref: ray.ObjectRef) -> Dict[str, Any]:
+    def _phase_a_discovery(self) -> Dict[str, Any]:
         """Calculates permutations and routes to Grid Search or Optuna."""
-        hparams = self.manifest.get("hyperparameters", {})
+        # Support both 'hyperparameters' and 'parameters' keys
+        hparams = self.manifest.get("parameter_bounds", {})
+        if not hparams and "parameters" in self.manifest:
+            # Reconstruct bounds from min/max/step if available
+            hparams = {}
+            for k, v in self.manifest["parameters"].items():
+                if isinstance(v, dict) and "min" in v and "max" in v and "step" in v:
+                    hparams[k] = list(range(v["min"], v["max"] + v["step"], v["step"]))
+                elif isinstance(v, dict) and "min" in v and "max" in v:
+                    hparams[k] = [v["min"], v["max"]] # Fallback
+                elif isinstance(v, list):
+                    hparams[k] = v
         
-        # Calculate total permutations
-        keys, values = zip(*hparams.items())
-        permutations = [dict(zip(keys, v)) for v in itertools.product(*values)]
-        total_p = len(permutations)
+        # If no explicit ranges, check if they passed simple lists in hyperparameters
+        if not hparams:
+            hparams = self.manifest.get("hyperparameters", {})
+            
+        keys = list(hparams.keys())
+        # Ensure all values are iterable (lists)
+        values = [v if isinstance(v, (list, tuple)) else [v] for v in hparams.values()]
         
+        try:
+            permutations = [dict(zip(keys, v)) for v in itertools.product(*values)]
+            total_p = len(permutations)
+        except Exception:
+            permutations = []
+            total_p = 0
+            
+        if total_p == 0:
+            print("      - No valid hyperparameter permutations found. Using default params.")
+            return {k: v[0] if isinstance(v, list) else v for k, v in hparams.items()}
+            
         if total_p <= self.PERMUTATION_LIMIT:
             print(f"      - Circuit Breaker: Tier 1 (Grid Search) selected for {total_p} permutations.")
-            return self._run_grid_search(data_ref, permutations)
+            return self._run_grid_search(permutations)
         else:
             print(f"      - Circuit Breaker: Tier 2 (Optuna) selected for {total_p} permutations.")
-            return self._run_optuna_search(data_ref, hparams)
+            return self._run_optuna_search(hparams)
 
-    def _run_grid_search(self, data_ref: ray.ObjectRef, permutations: list) -> Dict[str, Any]:
-        """Tier 1: Brute-force evaluation of all permutations."""
+    def _run_grid_search(self, permutations: list) -> Dict[str, Any]:
+        """Tier 1: Brute-force evaluation of all permutations via Joblib."""
         features_config = self.manifest.get("features", [])
-        futures = [
-            evaluate_parameters_cpu.remote(
-                data_ref, 
-                p, 
-                features_config, 
-                self.strategy_path
+        
+        # Use joblib to parallelize
+        results = Parallel(n_jobs=-1)(
+            delayed(evaluate_parameters_joblib)(
+                p, features_config, self.strategy_path
             ) for p in permutations
-        ]
-        results = ray.get(futures)
-        best_trial = max(results, key=lambda x: x["sharpe"])
+        )
+        
+        best_trial = max(results, key=lambda x: x.get("sharpe", -1.0))
         return best_trial["params"]
 
-    def _run_optuna_search(self, data_ref: ray.ObjectRef, param_bounds: dict) -> Dict[str, Any]:
+    def _run_optuna_search(self, param_bounds: dict) -> Dict[str, Any]:
         """Tier 2: Bayesian Optimization via Optuna."""
-        # TODO: Implement Optuna TPESampler pipeline here.
-        # For now, gracefully fallback to the first parameter set to prevent crashes.
-        print("      - WARNING: Optuna pipeline not yet implemented. Falling back to default params.")
-        keys, values = zip(*param_bounds.items())
-        default_params = {k: v[0] for k, v in zip(keys, values)}
-        return default_params
+        features_config = self.manifest.get("features", [])
+        
+        # We must disable optuna's verbose logging to prevent console spam
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+        
+        def objective(trial):
+            params = {}
+            for k, bounds in param_bounds.items():
+                if isinstance(bounds, list) and len(bounds) >= 2:
+                    if all(isinstance(x, int) for x in bounds):
+                        params[k] = trial.suggest_int(k, min(bounds), max(bounds))
+                    else:
+                        params[k] = trial.suggest_float(k, min(bounds), max(bounds))
+                elif isinstance(bounds, list) and len(bounds) == 1:
+                    params[k] = bounds[0]
+                else:
+                    params[k] = bounds
+                    
+            res = evaluate_parameters_joblib(params, features_config, self.strategy_path)
+            return res.get("sharpe", -1.0)
+            
+        study = optuna.create_study(direction="maximize")
+        # Ensure we pass catch parameters to handle trial failures gracefully
+        study.optimize(objective, n_trials=100, n_jobs=-1, catch=(Exception,))
+        
+        return study.best_params
 
     def _phase_b_reality_check(self, optimal_params: Dict[str, Any]) -> Dict[str, Any]:
         backtester = LocalBacktester(self.strategy_path)

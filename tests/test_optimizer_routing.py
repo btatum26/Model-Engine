@@ -1,34 +1,29 @@
 import pytest
-from src.optimization.ray_cluster import RayClusterManager
-from src.optimization.local_cache import LocalCache
-from src.optimization.optimizer_core import OptimizerCore
-import ray
+import os
 import pandas as pd
 from unittest.mock import MagicMock
-
-def test_ray_cluster_manager_init():
-    manager = RayClusterManager(reserve_cpus=1)
-    assert manager.reserve_cpus == 1
+from src.optimization.local_cache import LocalCache, SHM_PATH, load_data_from_shm
+from src.optimization.optimizer_core import OptimizerCore
 
 def test_local_cache_operations():
-    # We need Ray for this
-    if not ray.is_initialized():
-        ray.init(num_cpus=1, ignore_reinit_error=True)
-    
     cache = LocalCache()
     df = pd.DataFrame({"close": [100, 101, 102]})
     dataset_ref = "test_data"
     
     ref = cache.load_to_ram(dataset_ref, df)
-    assert isinstance(ref, ray.ObjectRef)
+    assert ref == dataset_ref
+    
+    # Verify the file was written
+    assert os.path.exists(SHM_PATH)
+    
+    loaded_df = load_data_from_shm()
+    pd.testing.assert_frame_equal(df, loaded_df)
     
     get_ref = cache.get_ref(dataset_ref)
     assert get_ref == ref
     
     cache.clear_cache(dataset_ref)
-    assert cache.get_ref(dataset_ref) is None
-    
-    ray.shutdown()
+    assert not os.path.exists(SHM_PATH)
 
 def test_optimizer_core_instantiation():
     manifest = {
@@ -47,31 +42,29 @@ def test_optimizer_core_instantiation():
     assert optimizer.manifest == manifest
 
 def test_optimizer_circuit_breaker_routing():
-    # Mocking dependencies to test routing logic only
+    # Small permutation (<=5000)
     manifest_small = {
-        "hyperparameters": {"p1": list(range(20)), "p2": list(range(40))}, # 800 permutations
+        "parameters": {"p1": {"min": 1, "max": 50, "step": 1}, "p2": {"min": 1, "max": 50, "step": 1}}, # 2500 permutations
     }
+    
+    # Large permutation (>5000)
     manifest_large = {
-        "hyperparameters": {"p1": list(range(50)), "p2": list(range(25))}, # 1250 permutations
+        "parameters": {"p1": {"min": 1, "max": 100, "step": 1}, "p2": {"min": 1, "max": 100, "step": 1}}, # 10000 permutations
     }
     
     optimizer_small = OptimizerCore("path", "ref", manifest_small)
     optimizer_large = OptimizerCore("path", "ref", manifest_large)
     
-    # Use mocks for the search methods
     optimizer_small._run_grid_search = MagicMock(return_value={"p1": 0, "p2": 0})
     optimizer_small._run_optuna_search = MagicMock()
     
     optimizer_large._run_grid_search = MagicMock()
     optimizer_large._run_optuna_search = MagicMock(return_value={"p1": 0, "p2": 0})
     
-    # Dummy data_ref
-    data_ref = MagicMock()
-    
-    optimizer_small._phase_a_discovery(data_ref)
+    optimizer_small._phase_a_discovery()
     optimizer_small._run_grid_search.assert_called_once()
     optimizer_small._run_optuna_search.assert_not_called()
     
-    optimizer_large._phase_a_discovery(data_ref)
+    optimizer_large._phase_a_discovery()
     optimizer_large._run_optuna_search.assert_called_once()
     optimizer_large._run_grid_search.assert_not_called()
