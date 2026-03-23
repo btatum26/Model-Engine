@@ -14,14 +14,22 @@ from .local_cache import LocalCache
 from ..data_broker.data_broker import DataBroker
 
 @ray.remote(num_cpus=1)
-def evaluate_parameters_cpu(data_ref: ray.ObjectRef, params: dict, features_config: list, strategy_path: str) -> dict:
+def evaluate_parameters_cpu(data_ref, params: dict, features_config: list, strategy_path: str) -> dict:
     """Isolated trial execution on a Ray worker."""
     import sys
     import os
     import importlib.util
+    import ray
     
     # Step 1: Zero-copy read from Plasma Store
-    df_raw = ray.get(data_ref)
+    # If data_ref was passed as an ObjectRef, Ray dereferences it automatically.
+    if isinstance(data_ref, ray.ObjectRef):
+        df_raw = ray.get(data_ref)
+    else:
+        df_raw = data_ref
+    
+    project_root_added = False
+    strategy_path_added = False
     
     try:
         # Step 2: Compute features dynamically (Strictly passing by reference, no .copy())
@@ -33,8 +41,10 @@ def evaluate_parameters_cpu(data_ref: ray.ObjectRef, params: dict, features_conf
         project_root = os.path.abspath(os.path.join(os.getcwd()))
         if project_root not in sys.path:
             sys.path.insert(0, project_root)
+            project_root_added = True
         if strategy_path not in sys.path:
             sys.path.insert(0, strategy_path)
+            strategy_path_added = True
             
         spec = importlib.util.spec_from_file_location("strategy_worker_model", model_path)
         module = importlib.util.module_from_spec(spec)
@@ -66,8 +76,10 @@ def evaluate_parameters_cpu(data_ref: ray.ObjectRef, params: dict, features_conf
     except Exception as e:
         return {"sharpe": -1.0, "params": params, "error": str(e)}
     finally:
-        if strategy_path in sys.path:
+        if strategy_path_added and strategy_path in sys.path:
             sys.path.remove(strategy_path)
+        if project_root_added and project_root in sys.path:
+            sys.path.remove(project_root)
 
 class OptimizerCore:
     """Master Router for HPO. Orchestrates distributed trials via Ray."""

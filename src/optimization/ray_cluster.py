@@ -23,6 +23,8 @@ class RayClusterManager:
             # Simple GPU detection - in a real scenario, we might use nvidia-smi or similar
             # Ray handles most of this automatically if we don't specify, 
             # but we'll stick to the plan's explicit signature if needed.
+            os.environ["RAY_ACCEL_ENV_VAR_OVERRIDE_ON_ZERO"] = "1" # Or 0 depending on Ray version, but usually you just set CUDA_VISIBLE_DEVICES
+            
             print(f"      - Initializing Ray with {num_cpus} CPUs (Total: {total_cpus}, Reserved: {self.reserve_cpus})")
             ray.init(num_cpus=num_cpus, ignore_reinit_error=True)
 
