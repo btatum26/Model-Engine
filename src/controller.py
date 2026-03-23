@@ -153,7 +153,10 @@ class ApplicationController:
             strategy_path=strat_path,
             dataset_ref=dataset_ref,
             manifest=manifest,
-            ray_context=None 
+            ticker=ticker,
+            interval=interval,
+            start=timeframe.start,
+            end=timeframe.end
         )
         
         return optimizer.run()
