@@ -5,10 +5,13 @@ import context as ctx
 from src.controller import SignalModel
 
 class MomentumSurge(SignalModel):
-    def generate_signals(self, df, params):
+    def train(self, df, context, params):
+        return {}
+
+    def generate_signals(self, df, context, params, artifacts):
         # Use auto-generated context
         # RSI_14 will map to "RSI_14" in df
-        rsi_val = df[ctx.RSI_14]
+        rsi_val = df[context.RSI_14]
         
         condition_long = (rsi_val < params['rsi_lower'])
         condition_short = (rsi_val > params['rsi_upper'])

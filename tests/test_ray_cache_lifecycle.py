@@ -37,9 +37,14 @@ def test_worker_namespace_isolation():
     # Create a dummy strategy path
     strat_path = os.path.abspath("tests/dummy_strat")
     os.makedirs(strat_path, exist_ok=True)
+    
+    # Create context.py
+    with open(os.path.join(strat_path, "context.py"), "w") as f:
+        f.write("class Context:\n    pass")
+    
     # Create model.py that fails
     with open(os.path.join(strat_path, "model.py"), "w") as f:
-        f.write("class DummyModel:\n    def generate_signals(self, df, params):\n        raise ValueError('Forced Failure')")
+        f.write("from src.controller import SignalModel\nclass DummyModel(SignalModel):\n    def train(self, df, context, params):\n        return {}\n    def generate_signals(self, df, context, params, artifacts):\n        raise ValueError('Forced Failure')")
     
     df = pd.DataFrame({"close": np.random.randn(100)})
     data_ref = ray.put(df)
