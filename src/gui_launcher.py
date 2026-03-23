@@ -2,26 +2,26 @@ import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import os
 import json
-import threading
-import queue
+import requests
 import sys
 from datetime import datetime
 
 # Add project root to sys.path to allow internal imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.controller import ApplicationController, ExecutionMode, JobPayload, Timeframe, MultiAssetMode
+from src.controller import ExecutionMode, JobPayload, Timeframe, MultiAssetMode
 from src.workspace import WorkspaceManager
-from src.bundler import Bundler
 
-class GuiLauncher:
+TRANSIT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../transit"))
+BEACON_FILE = os.path.join(TRANSIT_DIR, "api_beacon.json")
+
+class EngineGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Vectorized Alpha Research Engine - Control Panel")
+        self.root.title("Alpha Research Engine - Control Panel")
         self.root.geometry("800x900")
         
-        self.controller = ApplicationController()
-        self.queue = queue.Queue()
+        self.api_url = None
         self.strategies_dir = "src/strategies"
         self.logs_dir = "logs"
         os.makedirs(self.logs_dir, exist_ok=True)
@@ -29,7 +29,9 @@ class GuiLauncher:
         self._setup_logging()
         self._create_widgets()
         self._refresh_strategies()
-        self._listen_to_queue()
+        
+        self.connect_to_daemon()
+        self._poll_jobs()
 
     def _setup_logging(self):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -42,6 +44,37 @@ class GuiLauncher:
         self.console.see(tk.END)
         with open(self.log_file, "a") as f:
             f.write(formatted_message)
+
+    def connect_to_daemon(self):
+        """Reads the beacon file to locate the Linux Daemon."""
+        if not os.path.exists(BEACON_FILE):
+            self._show_offline_warning("Beacon file not found. Is the Linux daemon running?")
+            return
+            
+        try:
+            with open(BEACON_FILE, "r") as f:
+                beacon = json.load(f)
+                
+            if beacon.get("status") != "online":
+                self._show_offline_warning("Daemon is marked as offline.")
+                return
+                
+            self.api_url = beacon.get("api_url")
+            
+            # Verify actual connection
+            res = requests.get(f"{self.api_url}/health", timeout=2)
+            if res.status_code == 200:
+                self._log(f"✅ Connected to Daemon at {self.api_url}")
+            else:
+                self._show_offline_warning("Daemon responded, but not healthy.")
+                
+        except Exception as e:
+            self._show_offline_warning(f"Failed to connect: {str(e)}")
+
+    def _show_offline_warning(self, msg):
+        messagebox.showwarning("Daemon Disconnected", msg)
+        self._log(f"Warning: {msg}")
+        self.api_url = None
 
     def _create_widgets(self):
         # --- Main Layout ---
@@ -65,7 +98,6 @@ class GuiLauncher:
         self.config_frame = ttk.LabelFrame(main_frame, text="Strategy Configurator", padding="5")
         self.config_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
-        # Scrollable area for config
         self.config_canvas = tk.Canvas(self.config_frame)
         self.config_scrollbar = ttk.Scrollbar(self.config_frame, orient="vertical", command=self.config_canvas.yview)
         self.scrollable_config = ttk.Frame(self.config_canvas)
@@ -85,7 +117,6 @@ class GuiLauncher:
         routing_frame = ttk.LabelFrame(main_frame, text="Execution Routing", padding="5")
         routing_frame.pack(fill=tk.X, pady=5)
 
-        # Common Job Parameters (Ticker, Interval, etc.)
         param_frame = ttk.Frame(routing_frame)
         param_frame.pack(fill=tk.X, pady=5)
         
@@ -102,8 +133,8 @@ class GuiLauncher:
         button_frame.pack(fill=tk.X, pady=5)
 
         ttk.Button(button_frame, text="Sync Data", command=self._sync_data).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        ttk.Button(button_frame, text="Run Backtest", command=lambda: self._run_job(ExecutionMode.BACKTEST)).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
-        ttk.Button(button_frame, text="Run Grid Search", command=lambda: self._run_job(ExecutionMode.TRAIN)).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        ttk.Button(button_frame, text="Run Backtest", command=lambda: self.submit_job("BACKTEST")).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        ttk.Button(button_frame, text="Run Grid Search", command=lambda: self.submit_job("TRAIN")).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         ttk.Button(button_frame, text="Bundle Artifact", command=self._bundle_artifact).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
 
         # --- Section 4: Progress Tracker ---
@@ -146,14 +177,11 @@ class GuiLauncher:
             self._log(f"Warning: manifest.json not found for {strategy}")
 
     def _populate_configurator(self):
-        # Clear existing widgets in scrollable_config
         for widget in self.scrollable_config.winfo_children():
             widget.destroy()
 
-        # Hyperparameters
         ttk.Label(self.scrollable_config, text="Hyperparameters", font=("", 10, "bold")).pack(anchor="w", pady=(10, 5))
         self.hp_entries = {}
-        # Support both new and old manifest formats for UI
         hparams = self.manifest.get("hyperparameters", self.manifest.get("parameters", {}))
         
         for key, val in hparams.items():
@@ -161,7 +189,6 @@ class GuiLauncher:
             frame.pack(fill=tk.X, padx=10, pady=2)
             ttk.Label(frame, text=key, width=20).pack(side=tk.LEFT)
             
-            # If val is a dict (new format), extract default
             display_val = val.get("default", val) if isinstance(val, dict) else val
             
             var = tk.StringVar(value=str(display_val))
@@ -169,18 +196,15 @@ class GuiLauncher:
             entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
             self.hp_entries[key] = var
 
-        # Features (Simplified for now - raw JSON edit for complex ones)
         ttk.Label(self.scrollable_config, text="Features (JSON)", font=("", 10, "bold")).pack(anchor="w", pady=(10, 5))
         self.features_text = scrolledtext.ScrolledText(self.scrollable_config, height=5)
         self.features_text.pack(fill=tk.X, padx=10, pady=2)
         self.features_text.insert(tk.END, json.dumps(self.manifest.get("features", []), indent=4))
 
-        # Parameter Bounds (for Optuna/Grid)
         ttk.Label(self.scrollable_config, text="Parameter Bounds (JSON)", font=("", 10, "bold")).pack(anchor="w", pady=(10, 5))
         self.bounds_text = scrolledtext.ScrolledText(self.scrollable_config, height=5)
         self.bounds_text.pack(fill=tk.X, padx=10, pady=2)
         
-        # New format has bounds inside parameters, old has separate parameter_bounds
         bounds = self.manifest.get("parameter_bounds", {})
         self.bounds_text.insert(tk.END, json.dumps(bounds, indent=4))
 
@@ -192,7 +216,6 @@ class GuiLauncher:
             return
 
         try:
-            # Reconstruct manifest (Sticking to original engine format for compatibility)
             new_hparams = {}
             for key, var in self.hp_entries.items():
                 val = var.get()
@@ -222,41 +245,39 @@ class GuiLauncher:
     def _sync_data(self):
         strategy = self.strategy_var.get()
         if not strategy: return
+        self._save_manifest()
         
-        self._save_manifest() # Ensure we sync latest UI values
-        
-        def task():
-            try:
-                self.queue.put(("LOG", f"Syncing {strategy}..."))
-                self.queue.put(("PROGRESS", 20))
-                
-                strat_path = os.path.join(self.strategies_dir, strategy)
-                wm = WorkspaceManager(strat_path)
-                
-                # Re-map new manifest format to old internal format if needed for WorkspaceManager
-                with open(wm.manifest_path, 'r') as f:
-                    manifest = json.load(f)
-                
-                features = manifest.get('features', [])
-                hparams = manifest.get('hyperparameters', {})
-                if not hparams and "parameters" in manifest:
-                    # Conversion from bootstrap format
-                    hparams = {k: v.get("default") if isinstance(v, dict) else v for k, v in manifest["parameters"].items()}
-                
-                bounds = manifest.get('parameter_bounds', {})
-                if not bounds and "parameters" in manifest:
-                    bounds = {k: [v.get("min"), v.get("max")] for k, v in manifest["parameters"].items() if isinstance(v, dict) and "min" in v}
+        try:
+            self._log(f"Syncing {strategy} locally...")
+            self.progress_var.set(20)
+            
+            strat_path = os.path.join(self.strategies_dir, strategy)
+            wm = WorkspaceManager(strat_path)
+            
+            with open(wm.manifest_path, 'r') as f:
+                manifest = json.load(f)
+            
+            features = manifest.get('features', [])
+            hparams = manifest.get('hyperparameters', {})
+            if not hparams and "parameters" in manifest:
+                hparams = {k: v.get("default") if isinstance(v, dict) else v for k, v in manifest["parameters"].items()}
+            
+            bounds = manifest.get('parameter_bounds', {})
+            if not bounds and "parameters" in manifest:
+                bounds = {k: [v.get("min"), v.get("max")] for k, v in manifest["parameters"].items() if isinstance(v, dict) and "min" in v}
 
-                wm.sync(features, hparams, bounds)
-                
-                self.queue.put(("PROGRESS", 100))
-                self.queue.put(("LOG", f"Sync complete. context.py updated."))
-            except Exception as e:
-                self.queue.put(("LOG", f"Sync failed: {e}"))
+            wm.sync(features, hparams, bounds)
+            
+            self.progress_var.set(100)
+            self._log("Sync complete. context.py updated.")
+        except Exception as e:
+            self._log(f"Sync failed: {e}")
 
-        threading.Thread(target=task, daemon=True).start()
+    def submit_job(self, mode):
+        if not self.api_url:
+            messagebox.showerror("Error", "Cannot submit: Daemon is disconnected.")
+            return
 
-    def _run_job(self, mode):
         strategy = self.strategy_var.get()
         ticker = self.ticker_var.get()
         interval = self.interval_var.get()
@@ -265,45 +286,59 @@ class GuiLauncher:
             messagebox.showwarning("Input Required", "Please select a strategy and ticker.")
             return
 
-        def task():
-            try:
-                self.queue.put(("LOG", f"Starting {mode} for {ticker}..."))
-                self.queue.put(("PROGRESS", 10))
-                
-                payload = {
-                    "strategy": strategy,
-                    "assets": [ticker],
-                    "interval": interval,
-                    "mode": mode,
-                    "timeframe": {"start": None, "end": None}
-                }
-                
-                results = self.controller.execute_job(payload)
-                
-                self.queue.put(("LOG", f"{mode} completed."))
-                self.queue.put(("LOG", f"Results: {json.dumps(results, indent=2) if results else 'Success'}"))
-                self.queue.put(("PROGRESS", 100))
-            except Exception as e:
-                self.queue.put(("LOG", f"Error during {mode}: {e}"))
-                self.queue.put(("PROGRESS", 0))
+        payload = {
+            "strategy": strategy,
+            "assets": [ticker],
+            "interval": interval,
+            "mode": mode,
+            "timeframe": {"start": None, "end": None}
+        }
+            
+        try:
+            res = requests.post(f"{self.api_url}/submit", json=payload)
+            if res.status_code == 200:
+                job_id = res.json().get("job_id")
+                self._log(f"Job Queued with ID: {job_id}")
+            else:
+                self._log(f"Failed to submit job: {res.text}")
+        except Exception as e:
+            messagebox.showerror("Network Error", str(e))
 
-        threading.Thread(target=task, daemon=True).start()
+    def _poll_jobs(self):
+        """Polls the API for job statuses and updates progress."""
+        if self.api_url:
+            try:
+                res = requests.get(f"{self.api_url}/api/v1/jobs", timeout=2)
+                if res.status_code == 200:
+                    jobs = res.json()
+                    if jobs:
+                        # Grab the latest job
+                        latest_job = jobs[0]
+                        status = latest_job.get("status")
+                        progress = latest_job.get("progress", 0.0)
+                        
+                        self.progress_var.set(progress)
+                        
+                        # Very noisy, we could just log status changes. But for now just set progress.
+                        # self._log(f"Latest Job Status: {status} - {progress}%")
+            except Exception as e:
+                pass # Suppress polling errors to avoid log spam
+                
+        self.root.after(2000, self._poll_jobs)
 
     def _bundle_artifact(self):
         strategy = self.strategy_var.get()
         if not strategy: return
         
-        def task():
-            try:
-                self.queue.put(("LOG", f"Bundling {strategy}..."))
-                strat_path = os.path.join(self.strategies_dir, strategy)
-                export_path = "exports"
-                bundle_file = Bundler.export(strat_path, export_path)
-                self.queue.put(("LOG", f"Artifact created: {bundle_file}"))
-            except Exception as e:
-                self.queue.put(("LOG", f"Bundling failed: {e}"))
-
-        threading.Thread(target=task, daemon=True).start()
+        try:
+            self._log(f"Bundling {strategy} locally...")
+            strat_path = os.path.join(self.strategies_dir, strategy)
+            export_path = "exports"
+            from src.bundler import Bundler
+            bundle_file = Bundler.export(strat_path, export_path)
+            self._log(f"Artifact created: {bundle_file}")
+        except Exception as e:
+            self._log(f"Bundling failed: {e}")
 
     def _create_new_strategy_popup(self):
         popup = tk.Toplevel(self.root)
@@ -325,7 +360,6 @@ class GuiLauncher:
             
             os.makedirs(strat_path)
             
-            # 1. manifest.json (The Configuration)
             manifest = {
                 "strategy_name": f"{name.replace('_', ' ').title()} - MA Crossover",
                 "description": "A basic trend-following strategy that goes long when a fast moving average crosses above a slow moving average, and short when it below.",
@@ -338,14 +372,9 @@ class GuiLauncher:
                     {"id": "SMA_Slow", "module": "trend.moving_avg", "function": "calculate_sma", "params": {"window": 50}}
                 ]
             }
-            # Note: We use 'params' mapping to existing engine for immediate runnability
             with open(os.path.join(strat_path, "manifest.json"), 'w') as f:
                 json.dump(manifest, f, indent=4)
             
-            # 2. context.py (The IDE Helper)
-            # Will be auto-generated by WorkspaceManager.sync below
-            
-            # 3. model.py (The Brain)
             model_content = """import numpy as np
 import pandas as pd
 from src.controller import SignalModel
@@ -380,7 +409,6 @@ class Model(SignalModel):
             with open(os.path.join(strat_path, "model.py"), 'w') as f:
                 f.write(model_content)
             
-            # Run Sync to generate initial context.py and formal manifest
             wm = WorkspaceManager(strat_path)
             hparams = {k: v["default"] for k, v in manifest["parameters"].items()}
             bounds = {k: [v["min"], v["max"]] for k, v in manifest["parameters"].items()}
@@ -395,19 +423,7 @@ class Model(SignalModel):
 
         ttk.Button(popup, text="Create", command=create).pack(pady=10)
 
-    def _listen_to_queue(self):
-        try:
-            while True:
-                msg_type, msg_val = self.queue.get_nowait()
-                if msg_type == "LOG":
-                    self._log(msg_val)
-                elif msg_type == "PROGRESS":
-                    self.progress_var.set(msg_val)
-        except queue.Empty:
-            pass
-        self.root.after(100, self._listen_to_queue)
-
 if __name__ == "__main__":
     root = tk.Tk()
-    app = GuiLauncher(root)
+    app = EngineGUI(root)
     root.mainloop()
