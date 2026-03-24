@@ -16,6 +16,12 @@ from ..logger import logger, daemon_logger
 from ..exceptions import EngineError
 from ..config import config
 
+# Initialize database schema
+Base.metadata.create_all(bind=engine)
+
+# Limit execution to one job at a time to prevent resource exhaustion
+job_executor = ProcessPoolExecutor(max_workers=1)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage the lifecycle of the API server."""
@@ -78,6 +84,7 @@ def run_job_in_executor(job_id: str):
         db.commit()
         
         payload = job.parameters
+        daemon_logger.info(f"Job payload: {payload}")
         controller = ApplicationController()
         
         job.progress = 50.0

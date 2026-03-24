@@ -97,7 +97,13 @@ class ApplicationController:
             )
         
         elif mode == ExecutionMode.TRAIN:
-            return self._handle_train(strat_path, assets, interval, payload.timeframe, payload)
+            return self._handle_train(
+                strat_path, 
+                assets, 
+                interval, 
+                payload.timeframe, 
+                payload
+            )
         
         elif mode == ExecutionMode.SIGNAL_ONLY:
             return self._handle_signal_only(
