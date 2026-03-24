@@ -1,0 +1,42 @@
+{
+    "strategy_name": "RSI Divergence",
+    "description": "Vectorized RSI Fractal Divergence strategy with breakout confirmation.",
+    "hyperparameters": {
+        "Macro_Lookback_Window": 40,
+        "Exit_Centerline_Long": 55,
+        "Exit_Centerline_Short": 45,
+        "rsi_period": 14,
+        "fractal_n": 5
+    },
+    "parameter_bounds": {
+        "Macro_Lookback_Window": [
+            20,
+            100
+        ],
+        "Exit_Centerline_Long": [
+            50,
+            65
+        ],
+        "Exit_Centerline_Short": [
+            35,
+            50
+        ],
+        "rsi_period": [
+            7,
+            28
+        ],
+        "fractal_n": [
+            2,
+            10
+        ]
+    },
+    "features": [
+        {
+            "id": "RSI_Divergence_Features",
+            "params": {
+                "rsi_period": 14,
+                "fractal_n": 5
+            }
+        }
+    ]
+}

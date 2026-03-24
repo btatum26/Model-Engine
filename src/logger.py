@@ -11,12 +11,12 @@ def setup_logger(name, log_file=None, level=logging.INFO):
     
     # Avoid duplicate handlers if the logger is retrieved multiple times
     if not logger.handlers:
-        # 1. Console Handler
+        # Console Handler
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
 
-        # 2. File Handler (Only if log_file is provided)
+        # File Handler (Only if log_file is provided)
         if log_file:
             try:
                 os.makedirs(os.path.dirname(log_file), exist_ok=True)

@@ -1,7 +1,7 @@
 import os
 import json
 from typing import List, Dict, Any
-from .features.base import Feature
+from .features.base import Feature, FEATURE_REGISTRY
 
 class WorkspaceManager:
     """Manages the synchronization of strategy configuration with local workspace files."""
@@ -38,12 +38,25 @@ class WorkspaceManager:
                 fid = feature_config.get("id")
                 params = feature_config.get("params", {})
                 
-                # Standardized column name generation using the base Feature class logic
-                col_name = Feature.generate_column_name(fid, params)
+                if fid not in FEATURE_REGISTRY:
+                    continue
+                    
+                feature_cls = FEATURE_REGISTRY[fid]
+                outputs = feature_cls().outputs
                 
-                # Create a class attribute mapping for user access in model.py
-                safe_fid = fid.upper().replace(" ", "_").replace("-", "_")
-                f.write(f"        self.{safe_fid} = '{col_name}'\n")
+                for output in outputs:
+                    # Standardized column name generation
+                    col_name = Feature.generate_column_name(fid, params, output)
+                    
+                    # Create a class attribute mapping for user access in model.py
+                    # If it's a multi-output feature, use the output name as the attribute
+                    if output:
+                        attr_name = output.upper().replace(" ", "_").replace("-", "_")
+                    else:
+                        # Fallback for single-output features
+                        attr_name = fid.upper().replace(" ", "_").replace("-", "_")
+                        
+                    f.write(f"        self.{attr_name} = '{col_name}'\n")
             
             if not features:
                 f.write("        pass\n")
