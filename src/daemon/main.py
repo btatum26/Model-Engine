@@ -68,7 +68,7 @@ def submit_job(payload: JobPayloadRequest):
         )
         job_id = job.job_id
         
-        # 1. Create the Redis Hash for job state
+        # Create the Redis Hash for job state
         # We must serialize nested dicts (like parameters) to strings for Redis Hashes
         mapping = {
             "job_id": job_id,
@@ -80,11 +80,11 @@ def submit_job(payload: JobPayloadRequest):
         }
         redis_client.hset(f"job:{job_id}", mapping=mapping)
         
-        # 2. Add to the Sorted Set (ZSET) for ordered pagination
+        # Add to the Sorted Set (ZSET) for ordered pagination
         # Score is the current timestamp
         redis_client.zadd("jobs:all", {job_id: time.time()})
         
-        # 3. Enqueue the task to RQ
+        # Enqueue the task to RQ
         # We pass the job_id so the worker knows which Redis Hash to update
         from .tasks import process_job  # Import here to avoid circular dependencies
         task_queue.enqueue(

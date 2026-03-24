@@ -4,7 +4,6 @@ import json
 import traceback
 import redis
 from rq import get_current_job
-from rq import get_current_job
 from .models import JobStatus
 
 # Ensure the root directory is in the path so we can import src.controller

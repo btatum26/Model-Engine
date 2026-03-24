@@ -9,7 +9,6 @@ conn = redis.from_url(redis_url)
 if __name__ == '__main__':
     print("Starting RQ Worker... Listening to 'default' queue.")
     
-    # In RQ 2.0.0+, we pass the connection explicitly instead of using `with Connection():`
     queue = Queue('default', connection=conn)
     worker = Worker([queue], connection=conn)
     
