@@ -1,7 +1,7 @@
 import enum
 import uuid
-from sqlalchemy import Column, String, Float, Enum, JSON
-from .jobs_db import Base
+from pydantic import BaseModel, Field
+from typing import Optional
 
 class JobStatus(str, enum.Enum):
     QUEUED = "QUEUED"
@@ -10,13 +10,12 @@ class JobStatus(str, enum.Enum):
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"
 
-class JobRegistry(Base):
-    __tablename__ = "job_registry"
-
-    job_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    strategy_name = Column(String, nullable=False)
-    status = Column(Enum(JobStatus), default=JobStatus.QUEUED)
-    progress = Column(Float, default=0.0)
-    parameters = Column(JSON, default=dict)
-    artifact_path = Column(String, nullable=True)
-    error_log = Column(String, nullable=True)
+class JobRegistry(BaseModel):
+    # Using default_factory to generate a new UUID on instantiation
+    job_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    strategy_name: str
+    status: JobStatus = JobStatus.QUEUED
+    progress: float = 0.0
+    parameters: dict = Field(default_factory=dict)
+    artifact_path: Optional[str] = None
+    error_log: Optional[str] = None
