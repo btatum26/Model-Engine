@@ -12,58 +12,23 @@ from concurrent.futures import ProcessPoolExecutor
 
 from .jobs_db import SessionLocal, engine, Base
 from .models import JobRegistry, JobStatus
-from ..logger import logger
+from ..logger import logger, daemon_logger
 from ..exceptions import EngineError
-
-# Transit directory for inter-process communication
-TRANSIT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../transit"))
-BEACON_FILE = os.path.join(TRANSIT_DIR, "api_beacon.json")
-PORT = 8000
-
-# Initialize database schema
-Base.metadata.create_all(bind=engine)
-
-# Limit execution to one job at a time to prevent resource exhaustion
-job_executor = ProcessPoolExecutor(max_workers=1)
-
-def get_local_ip():
-    """Retrieve the primary local IP address."""
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(('10.255.255.255', 1))
-        IP = s.getsockname()[0]
-    except Exception:
-        IP = '127.0.0.1'
-    finally:
-        s.close()
-    return IP
+from ..config import config
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage the lifecycle of the API server."""
-    os.makedirs(TRANSIT_DIR, exist_ok=True)
-    api_url = f"http://{get_local_ip()}:{PORT}"
-    
-    beacon_data = {"api_url": api_url, "status": "online"}
-    try:
-        with open(BEACON_FILE, "w") as f:
-            json.dump(beacon_data, f)
-        logger.info(f"API Online. Beacon: {BEACON_FILE} -> {api_url}")
-    except Exception as e:
-        logger.error(f"Failed to write beacon file: {e}")
+    # High-level status to console
+    logger.info(f"API Online at {config.api_url}")
+    # Detailed log to file
+    daemon_logger.info("FastAPI Server starting up...")
     
     yield
     
-    # Finalize state on shutdown
-    beacon_data["status"] = "offline"
-    try:
-        with open(BEACON_FILE, "w") as f:
-            json.dump(beacon_data, f)
-    except Exception as e:
-        logger.error(f"Failed to update beacon file: {e}")
-        
     job_executor.shutdown(wait=False)
-    logger.info("API Offline. Beacon updated.")
+    logger.info("API Offline.")
+    daemon_logger.info("FastAPI Server shut down.")
 
 app = FastAPI(title="Research Engine API", lifespan=lifespan)
 
@@ -107,6 +72,7 @@ def run_job_in_executor(job_id: str):
         return
 
     try:
+        daemon_logger.info(f"Starting Job execution: {job_id}")
         job.status = JobStatus.RUNNING
         job.progress = 10.0
         db.commit()
@@ -125,10 +91,11 @@ def run_job_in_executor(job_id: str):
         job.progress = 100.0
         job.artifact_path = json.dumps(result) if result else None
         db.commit()
+        daemon_logger.info(f"Job completed successfully: {job_id}")
         
     except Exception as e:
         db.rollback()
-        logger.error(f"Job {job_id} failed: {e}", exc_info=True)
+        daemon_logger.error(f"Job {job_id} failed: {e}", exc_info=True)
         job = db.query(JobRegistry).filter(JobRegistry.job_id == job_id).first()
         if job:
             job.status = JobStatus.FAILED
@@ -155,10 +122,11 @@ def submit_job(payload: JobPayloadRequest, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(job)
         
+        daemon_logger.info(f"Job Queued: {job.job_id} for strategy {payload.strategy}")
         job_executor.submit(run_job_in_executor, job.job_id)
         return {"job_id": job.job_id, "status": job.status}
     except Exception as e:
-        logger.error(f"Failed to submit job: {e}")
+        daemon_logger.error(f"Failed to submit job: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/api/v1/jobs")
@@ -179,5 +147,5 @@ def list_jobs(db: Session = Depends(get_db)):
             for j in jobs
         ]
     except Exception as e:
-        logger.error(f"Failed to list jobs: {e}")
+        daemon_logger.error(f"Failed to list jobs: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")

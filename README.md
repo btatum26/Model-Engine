@@ -70,7 +70,6 @@ A FastAPI-based background service that manages a job queue and executes long-ru
 # Start the daemon
 uv run python -m uvicorn src.daemon.main:app --reload --port 8000
 ```
-- **Beacon System**: Automatically writes an `api_beacon.json` to the `transit/` directory so the GUI can discover the daemon's address.
 - **Job Registry**: Uses a local SQLite database (`jobs.db`) to persist job history and status.
 
 ---

@@ -71,7 +71,7 @@ class ApplicationController:
             if isinstance(payload, dict):
                 payload = JobPayload(**payload)
         except Exception as e:
-            logger.error(f"Invalid job payload: {e}")
+            logger.error(f"Invalid job payload: {e}", exc_info=True)
             raise ValidationError(f"Invalid job payload: {e}")
             
         strategy_name = payload.strategy

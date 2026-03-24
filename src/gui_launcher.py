@@ -11,10 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from src.controller import ExecutionMode, JobPayload, Timeframe, MultiAssetMode
 from src.workspace import WorkspaceManager
-
-# Define communication paths
-TRANSIT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../transit"))
-BEACON_FILE = os.path.join(TRANSIT_DIR, "api_beacon.json")
+from src.config import config
 
 class EngineGUI:
     def __init__(self, root):
@@ -22,7 +19,7 @@ class EngineGUI:
         self.root.title("Research Engine - Control Panel")
         self.root.geometry("800x900")
         
-        self.api_url = None
+        self.api_url = config.api_url
         self.strategies_dir = "src/strategies"
         self.logs_dir = "logs"
         os.makedirs(self.logs_dir, exist_ok=True)
@@ -52,21 +49,8 @@ class EngineGUI:
             pass
 
     def connect_to_daemon(self):
-        """Reads the beacon file to locate the compute daemon."""
-        if not os.path.exists(BEACON_FILE):
-            self._show_offline_warning("Beacon file not found. Ensure the daemon is running.")
-            return
-            
+        """Verifies connection to the compute daemon."""
         try:
-            with open(BEACON_FILE, "r") as f:
-                beacon = json.load(f)
-                
-            if beacon.get("status") != "online":
-                self._show_offline_warning("Daemon status is offline.")
-                return
-                
-            self.api_url = beacon.get("api_url")
-            
             # Verify network connectivity
             res = requests.get(f"{self.api_url}/health", timeout=2)
             if res.status_code == 200:
@@ -75,13 +59,12 @@ class EngineGUI:
                 self._show_offline_warning("Daemon responded with an error.")
                 
         except Exception as e:
-            self._show_offline_warning(f"Connection failed: {str(e)}")
+            self._show_offline_warning(f"Connection to Daemon failed at {self.api_url}")
 
     def _show_offline_warning(self, msg):
         """Helper to alert user of connectivity issues."""
         messagebox.showwarning("Daemon Disconnected", msg)
         self._log(f"Warning: {msg}")
-        self.api_url = None
 
     def _create_widgets(self):
         """Main UI layout initialization."""
@@ -289,7 +272,7 @@ class EngineGUI:
     def submit_job(self, mode):
         """Send job request to the compute daemon."""
         if not self.api_url:
-            messagebox.showerror("Error", "Daemon is disconnected.")
+            messagebox.showerror("Error", "API URL not configured.")
             return
 
         strategy = self.strategy_var.get()
