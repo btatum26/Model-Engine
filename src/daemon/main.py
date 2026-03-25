@@ -1,5 +1,6 @@
 import json
 import time
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
@@ -25,8 +26,8 @@ async def lifespan(app: FastAPI):
     daemon_logger.info("FastAPI Server starting up... Connecting to Redis.")
     
     # Initialize Redis Connection Pool
-    # Replace 'localhost' with your Redis host if different
-    redis_pool = redis.ConnectionPool(host='localhost', port=6379, db=0, decode_responses=True)
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    redis_pool = redis.ConnectionPool(host=redis_url, port=6379, db=0, decode_responses=True)
     redis_client = redis.Redis(connection_pool=redis_pool)
     task_queue = Queue('default', connection=redis_client)
     
