@@ -58,14 +58,15 @@ class LocalBacktester:
             for obj_name in dir(module):
                 obj = getattr(module, obj_name)
                 if isinstance(obj, type) and issubclass(obj, SignalModel) and obj is not SignalModel:
-                    # Instantiate both model and context
-                    return obj(), (context_class() if context_class else None)
+                    # Return the CLASSES, not instances, so we can spawn fresh ones safely
+                    return obj, context_class
                     
             raise StrategyError(f"No valid SignalModel subclass found in {model_path}")
         except Exception as e:
             logger.error(f"Failed to load strategy components: {e}")
             raise StrategyError(f"Strategy initialization failed: {e}")
-
+        
+    
     def _audit_nans(self, df: pd.DataFrame, feature_ids: List[str]):
         """Scans for NaN values in computed features and logs warnings if found."""
         for fid in feature_ids:
@@ -74,6 +75,7 @@ class LocalBacktester:
                 nan_count = df[col].isna().sum()
                 if nan_count > 0:
                     logger.warning(f"Feature '{col}' has {nan_count} NaN values.")
+
 
     def run(self, raw_data: pd.DataFrame, params: Optional[Dict[str, Any]] = None) -> pd.Series:
         """Executes a single backtest pass with specified parameters."""
@@ -84,7 +86,12 @@ class LocalBacktester:
             feature_ids = [f['id'] for f in features_config]
             self._audit_nans(df_full, feature_ids)
             
-            model, context = self._load_user_model_and_context()
+            model_class, context_class = self._load_user_model_and_context()
+            
+            # Instantiate fresh objects
+            model = model_class()
+            context = context_class() if context_class else None
+            
             hyperparams = params if params is not None else self.manifest.get('hyperparameters', {})
             
             artifacts = model.train(df_full, context, hyperparams)
@@ -109,7 +116,7 @@ class LocalBacktester:
             feature_ids = [f['id'] for f in features_config]
             self._audit_nans(df_full, feature_ids)
             
-            model, context = self._load_user_model_and_context()
+            model_class, context_class = self._load_user_model_and_context()
             
             keys = list(param_bounds.keys())
             values = list(param_bounds.values())
@@ -118,6 +125,10 @@ class LocalBacktester:
             logger.info(f"Starting parameter sweep across {len(permutations)} permutations.")
             results = []
             for i, p in enumerate(permutations):
+                # Instantiate fresh objects to prevent state leakage between permutations
+                model = model_class()
+                context = context_class() if context_class else None
+                
                 artifacts = model.train(df_full, context, p)
                 signals = model.generate_signals(df_full, context, p, artifacts)
                 
@@ -129,3 +140,40 @@ class LocalBacktester:
         except Exception as e:
             logger.error(f"Grid search failed: {e}")
             raise StrategyError(f"Grid search failed: {e}")
+
+    def run_batch(self, datasets: Dict[str, pd.DataFrame], params: Optional[Dict[str, Any]] = None) -> Dict[str, pd.Series]:
+        """Executes a batch of backtests efficiently by loading the module only once."""
+        results = {}
+        if not datasets:
+            return results
+
+        try:
+            # Load the user's classes ONCE for the entire batch
+            model_class, context_class = self._load_user_model_and_context()
+            features_config = self.manifest.get('features', [])
+            feature_ids = [f['id'] for f in features_config]
+            hyperparams = params if params is not None else self.manifest.get('hyperparameters', {})
+
+            for ticker, df_raw in datasets.items():
+                logger.info(f"Processing batch execution for {ticker}")
+                try:
+                    df_full, _, _ = compute_all_features(df_raw, features_config)
+                    self._audit_nans(df_full, feature_ids)
+
+                    # Instantiate fresh objects to prevent state leakage between assets
+                    model = model_class()
+                    context = context_class() if context_class else None
+
+                    artifacts = model.train(df_full, context, hyperparams)
+                    signals = model.generate_signals(df_full, context, hyperparams, artifacts)
+                    results[ticker] = signals
+                except Exception as e:
+                    logger.error(f"Batch execution failed for {ticker}: {e}")
+                    # In a batch, we capture the failure but continue processing the rest
+                    results[ticker] = pd.Series(dtype=float) 
+                    
+            return results
+            
+        except Exception as e:
+            logger.error(f"Batch setup failed: {e}")
+            raise StrategyError(f"Batch run failed: {e}")

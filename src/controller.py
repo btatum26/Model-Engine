@@ -119,29 +119,43 @@ class ApplicationController:
 
     def _handle_backtest(self, strat_path: str, assets: List[str], interval: str, 
                          start: Optional[str], end: Optional[str], multi_asset_mode: MultiAssetMode):
-        """Executes the backtesting pipeline."""
+        """Executes the backtesting pipeline using batch processing."""
         if len(assets) > 1 and multi_asset_mode == MultiAssetMode.PORTFOLIO:
             raise NotImplementedError("PORTFOLIO mode is not yet supported.")
 
-        all_metrics = {}
+        # Fetch all data upfront
+        datasets = {}
         for ticker in assets:
-            logger.info(f"Running backtest for {ticker} ({interval})")
+            logger.info(f"Fetching data for {ticker} ({interval})")
             df_raw = self.broker.get_data(ticker, interval, start, end)
             
             if df_raw.empty:
                 logger.warning(f"No data available for {ticker} in requested range.")
                 continue
+            datasets[ticker] = df_raw
 
-            try:
-                backtester = LocalBacktester(strat_path)
-                signals = backtester.run(df_raw)
-                
-                metrics = Tearsheet.calculate_metrics(df_raw, signals)
+        all_metrics = {}
+        if not datasets:
+            return all_metrics
+
+        # Run the backtester once for the entire batch
+        try:
+            backtester = LocalBacktester(strat_path)
+            batch_signals = backtester.run_batch(datasets)
+
+            # Calculate metrics for each completed run
+            for ticker, signals in batch_signals.items():
+                if signals.empty:
+                    all_metrics[ticker] = {"error": "Execution failed during batch run"}
+                    continue
+                    
+                metrics = Tearsheet.calculate_metrics(datasets[ticker], signals)
                 all_metrics[ticker] = metrics
-                
                 Tearsheet.print_summary(metrics)
-            except Exception as e:
-                logger.error(f"Backtest failed for {ticker}: {e}", exc_info=True)
+                
+        except Exception as e:
+            logger.error(f"Batch backtest initialization failed: {e}", exc_info=True)
+            for ticker in datasets.keys():
                 all_metrics[ticker] = {"error": str(e)}
 
         return all_metrics
@@ -182,20 +196,34 @@ class ApplicationController:
 
     def _handle_signal_only(self, strat_path: str, assets: List[str], interval: str, 
                             start: Optional[str], end: Optional[str]):
-        """Executes the signal generation pipeline without full backtesting."""
+        """Executes the signal generation pipeline using batch processing."""
+        # Fetch all data upfront
+        datasets = {}
         results = {}
+        
         for ticker in assets:
-            logger.info(f"Generating signals for {ticker}")
+            logger.info(f"Fetching data to generate signals for {ticker}")
             df_raw = self.broker.get_data(ticker, interval, start, end)
             
             if df_raw.empty:
                 results[ticker] = {"error": "No data found"}
                 continue
+            datasets[ticker] = df_raw
 
-            try:
-                backtester = LocalBacktester(strat_path)
-                signals = backtester.run(df_raw)
-                
+        if not datasets:
+            return results
+
+        # run the backtester once for the entire batch
+        try:
+            backtester = LocalBacktester(strat_path)
+            batch_signals = backtester.run_batch(datasets)
+            
+            # Format the final output payloads
+            for ticker, signals in batch_signals.items():
+                if signals.empty:
+                    results[ticker] = {"error": "Signal generation failed"}
+                    continue
+                    
                 last_signal = float(signals.iloc[-1])
                 timestamp = signals.index[-1].isoformat()
 
@@ -205,8 +233,10 @@ class ApplicationController:
                     "asset": ticker,
                     "mode": "SIGNAL_ONLY"
                 }
-            except Exception as e:
-                logger.error(f"Signal generation failed for {ticker}: {e}", exc_info=True)
+                
+        except Exception as e:
+            logger.error(f"Batch signal generation failed: {e}", exc_info=True)
+            for ticker in datasets.keys():
                 results[ticker] = {"error": str(e)}
 
         return results
