@@ -70,7 +70,7 @@ services:
     build:
       context: .
       args:
-        - UV_INSTALL_ARGS="" # This forces uv to install dev dependencies (pytest)\
+        - UV_INSTALL_ARGS= # This forces uv to install dev dependencies (pytest)
       dockerfile: Dockerfile 
     container_name: research_tester
     environment:
