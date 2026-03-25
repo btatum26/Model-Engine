@@ -16,24 +16,23 @@ services:
       - research_net
     restart: unless-stopped
 
-  # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
   # THE GATEWAY: FastAPI (Container A)
   # ---------------------------------------------------------------------------
   api:
     build: .
     container_name: research_api
-    # 'uv run' ensures the environment from uv.lock is active
-    command: uv run uvicorn src.daemon.main:app --host 0.0.0.0 --port 8000
+    command: uv run uvicorn src.daemon.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
     environment:
       - REDIS_URL=redis://redis:6379/0
       - PYTHONPATH=/app
     volumes:
-      # Shared volumes for persistent data and artifacts
-      - ./data:/app/data
-      - ./exports:/app/exports
-      - ./logs:/app/logs
+      - .:/app           # <-- Mounts your entire project directory
+      - /app/.venv       # <-- Protects the container's virtual environment
+      # (You no longer need the separate data/exports/logs mounts 
+      # since .:/app covers the whole directory, but keeping them won't hurt)
     depends_on:
       - redis
     networks:
@@ -46,16 +45,13 @@ services:
   worker:
     build: .
     container_name: research_worker
-    # Running the worker as a module to maintain absolute imports
     command: uv run python -m src.daemon.worker
     environment:
       - REDIS_URL=redis://redis:6379/0
       - PYTHONPATH=/app
     volumes:
-      # MUST match the API volumes for the "Shared Volume" strategy to work
-      - ./data:/app/data
-      - ./exports:/app/exports
-      - ./logs:/app/logs
+      - .:/app           # <-- Mounts your entire project directory
+      - /app/.venv       # <-- Protects the container's virtual environment
     depends_on:
       - redis
     networks:
@@ -70,7 +66,7 @@ services:
     build:
       context: .
       args:
-        - UV_INSTALL_ARGS= # This forces uv to install dev dependencies (pytest)
+        - UV_INSTALL_ARGS= # Forces uv to install dev dependencies
       dockerfile: Dockerfile 
     container_name: research_tester
     environment:
@@ -79,13 +75,12 @@ services:
       - TEST_MODE=true
     volumes:
       - .:/app
-      - /app/.venv # Anonymous volume to hide host .venv from container
+      - /app/.venv 
       - ./data:/app/data
-    # This ensures the main redis is up before testing starts
     depends_on:
       - redis
-    # The command to run when this specific service is called
-    command: uv run pytest
+    # CHANGED: Keep the container alive indefinitely
+    command: sleep infinity
 
 networks:
   research_net:

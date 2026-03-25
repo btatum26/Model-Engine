@@ -63,7 +63,7 @@ uv run python src/gui_launcher.py
 Run the test suite inside a controlled container environment:
 First you must warm the container by running 
 ```bash
-docker compose --profile test run pytest
+docker compose --profile test up -d pytest
 ```
 once you have a container running, you can simply run 
 ```bash

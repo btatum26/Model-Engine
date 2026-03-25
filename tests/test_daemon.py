@@ -4,34 +4,8 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.daemon.main import app, get_db
-from src.daemon.jobs_db import Base
+from src.daemon.main import app
 from src.daemon.models import JobStatus
-
-# Setup a test database
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test_jobs.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-def override_get_db():
-    try:
-        db = TestingSessionLocal()
-        yield db
-    finally:
-        db.close()
-
-app.dependency_overrides[get_db] = override_get_db
-
-@pytest.fixture(autouse=True)
-def setup_db():
-    Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
-    if os.path.exists("test_jobs.db"):
-        try:
-            os.remove("test_jobs.db")
-        except PermissionError:
-            pass
 
 client = TestClient(app)
 

@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     
     # Initialize Redis Connection Pool
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    redis_pool = redis.ConnectionPool(host=redis_url, port=6379, db=0, decode_responses=True)
+    redis_pool = redis.ConnectionPool.from_url(redis_url, decode_responses=True)
     redis_client = redis.Redis(connection_pool=redis_pool)
     task_queue = Queue('default', connection=redis_client)
     
