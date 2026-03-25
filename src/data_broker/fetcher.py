@@ -1,69 +1,112 @@
+import logging
 import yfinance as yf
 import pandas as pd
-import time
-import random
-from datetime import datetime, timedelta
+import requests
+import requests_cache
+from datetime import datetime
+import pandas_datareader.data as web
+from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+
+# 1. Anomaly Logging
+logging.basicConfig(
+    filename='data/ingestion.log', 
+    level=logging.WARNING,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+# 2. Local Disk Caching
+session = requests_cache.CachedSession('yfinance.cache', expire_after=43200)
 
 class DataFetcher:
-    def __init__(self, proxies=None):
-        self.proxies = proxies or []
-        self.last_fetch_time = 0
-        self.rate_limit_delay = 1.0
+    def __init__(self, av_api_key: str = "YOUR_FREE_KEY"):
+        self.session = session
+        self.av_api_key = av_api_key
 
-    def _get_proxy(self):
-        return random.choice(self.proxies) if self.proxies else None
+    def _sanitize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """API Data Sanitization Layer: Drop NaNs and invalid rows."""
+        original_len = len(df)
+        df = df.dropna()
+        if len(df) < original_len:
+            logging.warning(f"Sanitization dropped {original_len - len(df)} rows containing NaN.")
+        return df
 
-    def fetch_historical(self, ticker, interval, period="max", start=None, end=None):
-        """
-        Fetches historical data from yfinance with rate limiting.
-        """
-        elapsed = time.time() - self.last_fetch_time
-        if elapsed < self.rate_limit_delay:
-            time.sleep(self.rate_limit_delay - elapsed)
-        
-        mapping = {
-            "1w": "1wk",
-            "1d": "1d",
-            "4h": "1h",
-            "1h": "1h",
-            "30m": "30m",
-            "15m": "15m"
-        }
-        yf_interval = mapping.get(interval, "1d")
-        
+    @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
+    def fetch_ohlcv(self, ticker: str, interval: str, start: str, end: str) -> pd.DataFrame:
+        """Fetches OHLCV data with backoff retries."""
         try:
-            proxy = self._get_proxy()
-            stock = yf.Ticker(ticker)
-            df = stock.history(interval=yf_interval, period=period, start=start, end=end)
-            
-            self.last_fetch_time = time.time()
+            yf_interval = interval if interval != '4h' else '1h' 
+            df = yf.download(ticker, start=start, end=end, interval=yf_interval, progress=False, session=self.session)
 
-            if df is None or df.empty:
+            if df.empty:
                 return pd.DataFrame()
 
-            # Enforce UTC and remove awareness for database compatibility
-            if df.index.tz is not None:
-                df.index = df.index.tz_convert('UTC').tz_localize(None)
-            
-            if interval == "4h":
-                df = df.resample('4h', origin='start_day', closed='left', label='left').agg({
-                    'Open': 'first',
-                    'High': 'max',
-                    'Low': 'min',
-                    'Close': 'last',
-                    'Volume': 'sum'
-                }).dropna()
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.droplevel(1)
                 
-            return df
-        except Exception as e:
-            print(f"Error fetching data for {ticker}: {e}")
-            return pd.DataFrame()
+            df = df.reset_index()
+            ts_col = 'Datetime' if 'Datetime' in df.columns else 'Date'
+            df.rename(columns={
+                ts_col: 'timestamp', 'Open': 'open', 'High': 'high', 
+                'Low': 'low', 'Close': 'close', 'Volume': 'volume'
+            }, inplace=True)
 
-    def fetch_live_quote(self, ticker):
-        """Fetches the latest available price."""
-        try:
-            stock = yf.Ticker(ticker)
-            return stock.fast_info['last_price']
+            if df['timestamp'].dt.tz is not None:
+                df['timestamp'] = df['timestamp'].dt.tz_localize(None)
+
+            if interval == '4h' and not df.empty:
+                df.set_index('timestamp', inplace=True)
+                df = df.resample('4h', closed='left', label='left').agg({
+                    'open': 'first', 'high': 'max', 'low': 'min', 
+                    'close': 'last', 'volume': 'sum'
+                }).dropna().reset_index()
+
+            return self._sanitize_dataframe(df[['timestamp', 'open', 'high', 'low', 'close', 'volume']])
+        
         except Exception as e:
-            print(f"Error fetching live quote for {ticker}: {e}")
-            return None
+            logging.error(f"Failed to fetch OHLCV for {ticker}: {e}")
+            raise e
+
+    @retry(wait=wait_exponential(multiplier=2, min=4, max=10), stop=stop_after_attempt(3))
+    def fetch_fundamentals(self, ticker: str) -> dict:
+        """Fetches fundamentals from YF, falls back to Alpha Vantage on failure."""
+        try:
+            stock = yf.Ticker(ticker, session=self.session)
+            info = stock.info
+            # Extract key ingredients
+            return {
+                "eps": info.get("trailingEps"),
+                "book_value": info.get("bookValue"),
+                "total_debt": info.get("totalDebt"),
+                "total_cash": info.get("totalCash")
+            }
+        except Exception as e:
+            logging.warning(f"YFinance fundamentals failed for {ticker}. Attempting Alpha Vantage fallback. Error: {e}")
+            return self._alpha_vantage_fallback(ticker)
+
+    def _alpha_vantage_fallback(self, ticker: str) -> dict:
+        """Fallback for fundamentals if YF blocks us."""
+        url = f"https://www.alphavantage.co/query?function=OVERVIEW&symbol={ticker}&apikey={self.av_api_key}"
+        try:
+            response = requests.get(url).json()
+            # Note: Alpha Vantage returns strings, must cast to float
+            return {
+                "eps": float(response.get("EPS", 0)),
+                "book_value": float(response.get("BookValue", 0)),
+                "total_debt": None, # AV Overview doesn't give direct total debt without balance sheet endpoint
+                "total_cash": None
+            }
+        except Exception as e:
+            logging.error(f"Alpha Vantage fallback failed for {ticker}: {e}")
+            return {}
+
+    def fetch_macro_data(self, indicator: str, start: str, end: str) -> pd.DataFrame:
+        """Fetches Macro data from FRED API."""
+        try:
+            df = web.DataReader(indicator, 'fred', start, end)
+            df = df.reset_index()
+            df.rename(columns={'DATE': 'date', indicator: 'value'}, inplace=True)
+            df['indicator_name'] = indicator
+            return self._sanitize_dataframe(df)
+        except Exception as e:
+            logging.error(f"Failed to fetch FRED data for {indicator}: {e}")
+            return pd.DataFrame()

@@ -1,101 +1,98 @@
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import Optional, Union, Dict
-from .database import Database
-from .fetcher import DataFetcher
+from typing import Optional, List, Tuple
+from sqlalchemy import select, func
+from sqlalchemy.orm import Session
+
+from database import Database, OHLCV
+from fetcher import DataFetcher
 
 class DataBroker:
-    """
-    The Data Broker (Smart Hydration).
-    Abstracts data gathering so the backtester never knows where the data came from.
-    """
-    def __init__(self, db_path: str = "data/stocks.db", padding: int = 300):
-        self.db = Database(db_path)
+    def __init__(self):
+        self.db = Database()
         self.fetcher = DataFetcher()
-        self.padding = padding # Standard warm-up pad for indicators
 
-    def _get_padded_start(self, start: datetime, interval: str) -> datetime:
-        """Subtracts the warm-up padding from the start date."""
-        # Heuristic mapping for padding
-        multiplier = {
-            "15m": 0.25,
-            "30m": 0.5,
-            "1h": 1,
-            "4h": 4,
-            "1d": 24,
-            "1w": 168
-        }
-        hours_to_subtract = self.padding * multiplier.get(interval, 24)
-        return start - timedelta(hours=hours_to_subtract)
+    def _get_padding(self, start_date: datetime, interval: str, periods: int = 200) -> datetime:
+        """Calculates rough calendar padding to ensure indicator warm-up."""
+        if interval == '1d':
+            return start_date - timedelta(days=periods * 1.4)
+        elif interval == '1wk':
+            return start_date - timedelta(weeks=periods)
+        elif interval == '4h':
+            return start_date - timedelta(days=(periods / 2))
+        return start_date
 
-    def get_data(self, ticker: str, interval: str, 
-                 start: Optional[Union[str, datetime]] = None, 
-                 end: Optional[Union[str, datetime]] = None) -> pd.DataFrame:
-        """Smart Hydration Logic with Indicator Warm-Up."""
-        # Convert strings to datetime
-        if isinstance(start, str):
-            start = datetime.strptime(start, '%Y-%m-%d')
-        if isinstance(end, str):
-            end = datetime.strptime(end, '%Y-%m-%d')
+    def _get_db_bounds(self, ticker: str, interval: str) -> Tuple[Optional[datetime], Optional[datetime]]:
+        with Session(self.db.engine) as session:
+            stmt = select(func.min(OHLCV.timestamp), func.max(OHLCV.timestamp)).where(
+                OHLCV.ticker == ticker,
+                OHLCV.interval == interval
+            )
+            result = session.execute(stmt).first()
+            return result[0], result[1]
+
+    def get_data(self, ticker: str, interval: str, start: datetime, end: datetime) -> pd.DataFrame:
+        """The primary interface for the strategy engine."""
         
-        # Apply Padding for Indicator Warm-up
-        fetch_start = start
-        if start:
-            fetch_start = self._get_padded_start(start, interval)
-            print(f"      - Applying {self.padding} period warm-up pad. Adjusted start: {fetch_start}")
+        padded_start = self._get_padding(start, interval, periods=200)
 
-        # Query Database
-        print(f"      - Querying local database for {ticker} ({interval})...")
-        df_db = self.db.get_data(ticker, interval, fetch_start, end)
-        
-        # Gap Analysis
+        # 15-Minute Rule: Fetch directly, bypass DB
+        if interval == '15m':
+            print(f"[{ticker}] 15m requested. Bypassing DB.")
+            df = self.fetcher.fetch_ohlcv(
+                ticker, interval, 
+                start=padded_start.strftime('%Y-%m-%d'), 
+                end=(end + timedelta(days=1)).strftime('%Y-%m-%d')
+            )
+            if not df.empty:
+                df.set_index('timestamp', inplace=True)
+            return df
+
+        db_min, db_max = self._get_db_bounds(ticker, interval)
         needs_fetch = False
-        if df_db.empty:
-            print("      - Local database empty for this range.")
+
+        if not db_min or not db_max:
             needs_fetch = True
-        else:
-            db_start = df_db.index.min()
-            db_end = df_db.index.max()
-            print(f"      - Found local data from {db_start} to {db_end}.")
+            fetch_start, fetch_end = padded_start, end
+        elif padded_start < db_min or end > db_max:
+            needs_fetch = True
+            fetch_start, fetch_end = padded_start, end
 
-            if fetch_start and (db_start - fetch_start) > timedelta(hours=1):
-                print(f"      - GAP DETECTED: Requested start {fetch_start} is before local start {db_start}.")
-                needs_fetch = True
-            
-            now = datetime.now()
-            target_end = end if end else now
-            if (target_end - db_end) > timedelta(hours=24):
-                print(f"      - GAP DETECTED: Local data ends at {db_end}, requested end is {target_end}.")
-                needs_fetch = True
-
-        # Fetch and fill missing data
         if needs_fetch:
-            print(f"      - Syncing missing data from yfinance...")
-            if df_db.empty:
-                fetch_period = "max" if not fetch_start else None
-                df_new = self.fetcher.fetch_historical(ticker, interval, period=fetch_period, start=fetch_start, end=end)
-            else:
-                last_ts = df_db.index.max()
-                df_new = self.fetcher.fetch_historical(ticker, interval, start=last_ts, end=end)
+            df_new = self.fetcher.fetch_ohlcv(
+                ticker, interval, 
+                start=fetch_start.strftime('%Y-%m-%d'), 
+                end=(fetch_end + timedelta(days=1)).strftime('%Y-%m-%d')
+            )
             
-            # Cache results
             if not df_new.empty:
-                print(f"      - Sync complete. Saving {len(df_new)} new bars to database...")
-                self.db.save_data(df_new, ticker, interval)
-                df_db = self.db.get_data(ticker, interval, fetch_start, end)
-            else:
-                print("      - Warning: yfinance returned no new data.")
+                df_new['ticker'] = ticker
+                df_new['interval'] = interval
+                records = df_new.to_dict('records')
+                
+                with Session(self.db.engine) as session:
+                    try:
+                        from sqlalchemy.dialects.sqlite import insert
+                        stmt = insert(OHLCV).values(records)
+                        stmt = stmt.on_conflict_do_nothing(index_elements=['ticker', 'timestamp', 'interval'])
+                        session.execute(stmt)
+                        session.commit()
+                        print(f"[{ticker}] Hydrated DB with {len(records)} new {interval} bars.")
+                    except Exception as e:
+                        session.rollback()
+                        print(f"[{ticker}] DB Insert Failed: {e}")
 
-        return df_db
-    
-    def sync_historical(self, ticker: str, interval: str) -> bool:
-        """
-        Forces a fetch of all missing historical data up to the current moment.
-        """
-        pass
-        
-    def get_cached_inventory(self) -> Dict:
-        """
-        Returns a dictionary of what is in the DB.
-        """
-        pass
+        # Serve from DB
+        with Session(self.db.engine) as session:
+            stmt = select(OHLCV).where(
+                OHLCV.ticker == ticker,
+                OHLCV.interval == interval,
+                OHLCV.timestamp >= padded_start,
+                OHLCV.timestamp <= end
+            ).order_by(OHLCV.timestamp.asc())
+            
+            df_final = pd.read_sql(stmt, session.bind)
+            if not df_final.empty:
+                df_final.set_index('timestamp', inplace=True)
+                
+        return df_final[['open', 'high', 'low', 'close', 'volume']]

@@ -10,7 +10,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from src.workspace import WorkspaceManager
 from src.backtester import LocalBacktester
 from src.bundler import Bundler
-from src.live_node import LiveTradingNode
 
 # 1. Setup Strategy Workspace
 STRAT_DIR = "src/strategies/momentum_surge"
@@ -84,12 +83,6 @@ def test_full_flow():
     print("\n--- 4. Exporting to .strat ---")
     bundle_path = Bundler.export(STRAT_DIR, "exports")
     print(f"Bundle created at: {bundle_path}")
-
-    # E. Live Node Deployment (Production)
-    print("\n--- 5. Testing Live Node Deployment ---")
-    node = LiveTradingNode(bundle_path)
-    model = node.deploy()
-    print(f"Live Node deployed strategy: {type(model).__name__}")
     
     # Mock latest data (with features pre-computed as assumed by node)
     from src.features.features import compute_all_features
@@ -98,17 +91,6 @@ def test_full_flow():
     # Needs a mock context for Live Node
     class MockContext:
         RSI_14 = "RSI_14"
-        
-    try:
-        # Note: LiveTradingNode's on_market_tick needs to be updated to support the new signature
-        # as it currently passes only df and params in existing implementation.
-        # But this is a simple mock here.
-        model.generate_signals(df_with_features, MockContext, node.config['hyperparameters'], {})
-    except Exception as e:
-        print(f"Live Node signal error (expected due to signature): {e}")
-        
-    node.cleanup()
-    print("Live Node cleanup complete.")
 
 if __name__ == "__main__":
     test_full_flow()

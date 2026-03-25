@@ -1,8 +1,11 @@
-from sqlalchemy import create_engine, Column, String, Float, DateTime, Integer, UniqueConstraint, Index, text
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import sessionmaker
-import pandas as pd
 import os
+import pandas as pd
+from sqlalchemy import (
+    create_engine, Column, String, Float, DateTime, Integer, 
+    UniqueConstraint, Index, text, event
+)
+from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.pool import NullPool
 
 Base = declarative_base()
 
@@ -28,12 +31,26 @@ class Database:
     def __init__(self, db_path="data/stocks.db"):
         try:
             os.makedirs(os.path.dirname(db_path), exist_ok=True)
-            self.engine = create_engine(f"sqlite:///{db_path}")
+            
+            # 1. Added NullPool to prevent file locking on local systems
+            self.engine = create_engine(f"sqlite:///{db_path}", poolclass=NullPool)
+            
+            # 2. Attach the WAL mode PRAGMA strictly to this engine instance
+            event.listen(self.engine, "connect", self._set_sqlite_pragma)
+            
             Base.metadata.create_all(self.engine)
             self.Session = sessionmaker(bind=self.engine)
         except Exception as e:
             print(f"Database initialization error: {e}")
             raise
+
+    def _set_sqlite_pragma(self, dbapi_connection, connection_record):
+        """Enforces WAL mode for concurrent reads/writes."""
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.execute("PRAGMA synchronous=NORMAL;")
+        cursor.execute("PRAGMA foreign_keys=ON;")
+        cursor.close()
 
     def save_data(self, df, ticker, interval):
         """Saves a pandas DataFrame to the database using an efficient bulk operation."""
