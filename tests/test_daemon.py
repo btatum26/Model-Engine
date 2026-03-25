@@ -9,12 +9,13 @@ from src.daemon.models import JobStatus
 
 client = TestClient(app)
 
-def test_health_check():
+def test_health_check(mock_redis_client):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {"status": "ok", "redis": True}
 
-def test_submit_job():
+@patch("src.daemon.main.task_queue")
+def test_submit_job(mock_task_queue, mock_redis_client):
     payload = {
         "strategy": "momentum_surge",
         "assets": ["AAPL"],
@@ -22,18 +23,17 @@ def test_submit_job():
         "mode": "BACKTEST",
         "timeframe": {"start": "2023-01-01", "end": "2023-12-31"}
     }
-    # Mock job_executor.submit to avoid actual background process
-    with patch("src.daemon.main.job_executor.submit") as mock_submit:
-        response = client.post("/submit", json=payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert "job_id" in data
-        # Check if status is JobStatus.QUEUED or "QUEUED"
-        status = data["status"]
-        assert status == "QUEUED" or status == JobStatus.QUEUED.value
-        mock_submit.assert_called_once()
+    response = client.post("/submit", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "job_id" in data
+    # Check if status is JobStatus.QUEUED or "QUEUED"
+    status = data["status"]
+    assert status == "QUEUED" or status == JobStatus.QUEUED.value
+    mock_task_queue.enqueue.assert_called_once()
 
-def test_list_jobs():
+@patch("src.daemon.main.task_queue")
+def test_list_jobs(mock_task_queue, mock_redis_client):
     # Submit a job first
     payload = {
         "strategy": "momentum_surge",
@@ -41,8 +41,7 @@ def test_list_jobs():
         "interval": "1d",
         "mode": "BACKTEST"
     }
-    with patch("src.daemon.main.job_executor.submit"):
-        client.post("/submit", json=payload)
+    client.post("/submit", json=payload)
         
     response = client.get("/api/v1/jobs")
     assert response.status_code == 200

@@ -194,9 +194,13 @@ class ApplicationController:
             logger.error(f"Optimization failed: {e}", exc_info=True)
             raise StrategyError(f"Optimization failed: {e}")
 
-    def _handle_signal_only(self, strat_path: str, assets: List[str], interval: str, 
+    def _handle_signal_only(self, strat_path: str, assets: Union[str, List[str]], interval: str, 
                             start: Optional[str], end: Optional[str]):
         """Executes the signal generation pipeline using batch processing."""
+        # Normalize a single string asset into a list
+        if isinstance(assets, str):
+            assets = [assets]
+
         # Fetch all data upfront
         datasets = {}
         results = {}
@@ -211,9 +215,10 @@ class ApplicationController:
             datasets[ticker] = df_raw
 
         if not datasets:
+            logger.warning("No datasets available for signal generation.")
             return results
 
-        # run the backtester once for the entire batch
+        # Run the backtester once for the entire batch
         try:
             backtester = LocalBacktester(strat_path)
             batch_signals = backtester.run_batch(datasets)

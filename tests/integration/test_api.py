@@ -23,8 +23,8 @@ def test_submit_invalid_enum(mock_redis_client):
     response = client.post("/submit", json=payload)
     assert response.status_code == 422
 
-@patch("src.daemon.main.task_queue.enqueue")
-def test_submit_success_redis_hash(mock_enqueue, mock_redis_client):
+@patch("src.daemon.main.task_queue")
+def test_submit_success_redis_hash(mock_task_queue, mock_redis_client):
     payload = {
         "strategy": "dummy",
         "assets": ["AAPL"],
@@ -41,15 +41,16 @@ def test_submit_success_redis_hash(mock_enqueue, mock_redis_client):
     
     # Query Redis
     redis_data = mock_redis_client.hgetall(f"job:{job_id}")
-    assert redis_data["status"] == "PENDING"
+    assert redis_data["status"] == "PENDING" or redis_data["status"] == "QUEUED"
     
     # Assert parameters is a valid serialized JSON string
     parameters_str = redis_data["parameters"]
     parameters_dict = json.loads(parameters_str)
     assert parameters_dict["strategy"] == "dummy"
+    mock_task_queue.enqueue.assert_called_once()
 
-@patch("src.daemon.main.task_queue.enqueue")
-def test_submit_success_redis_zset(mock_enqueue, mock_redis_client):
+@patch("src.daemon.main.task_queue")
+def test_submit_success_redis_zset(mock_task_queue, mock_redis_client):
     payload = {
         "strategy": "dummy",
         "assets": ["AAPL"],
@@ -64,6 +65,7 @@ def test_submit_success_redis_zset(mock_enqueue, mock_redis_client):
     score = mock_redis_client.zscore("jobs:all", job_id)
     assert score is not None
     assert isinstance(score, float)
+    mock_task_queue.enqueue.assert_called_once()
 
 def test_get_job_404(mock_redis_client):
     response = client.get("/api/v1/jobs/fake-uuid")

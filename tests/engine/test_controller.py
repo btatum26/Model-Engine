@@ -50,7 +50,7 @@ def test_route_signal_only_timestamp(mock_exists, mock_backtester, mock_data_bro
     # Create a mock Series with a proper DatetimeIndex
     index = pd.date_range("2023-01-01", periods=3)
     mock_series = pd.Series([0.5, -0.5, 1.0], index=index)
-    mock_instance.run.return_value = mock_series
+    mock_instance.run_batch.return_value = {"AAPL": mock_series}
     mock_backtester.return_value = mock_instance
     
     controller = ApplicationController()
@@ -63,7 +63,6 @@ def test_route_signal_only_timestamp(mock_exists, mock_backtester, mock_data_bro
     }
     
     result = controller.execute_job(payload)
-    
     assert "AAPL" in result
     aapl_res = result["AAPL"]
     

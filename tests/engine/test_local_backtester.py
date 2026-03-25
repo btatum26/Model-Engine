@@ -61,10 +61,11 @@ def test_backtester_load_strategy(temp_strategy_dir):
     backtester = LocalBacktester(temp_strategy_dir)
     model, context_instance = backtester._load_user_model_and_context()
     
-    assert isinstance(model, SignalModel)
-    assert model.__class__.__name__ == "MockStrategy"
+    assert issubclass(model, SignalModel)
+    assert model.__name__ == "MockStrategy"
     # context_instance should be an object of the Context class
-    assert context_instance.__class__.__name__ == "Context"
+    assert context_instance is not None
+    assert context_instance.__name__ == "Context"
 
 def test_backtester_run(temp_strategy_dir):
     backtester = LocalBacktester(temp_strategy_dir)

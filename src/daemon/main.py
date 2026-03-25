@@ -8,6 +8,7 @@ from typing import List, Optional
 import redis
 from rq import Queue
 
+from src.controller import ExecutionMode
 from .models import JobRegistry, JobStatus
 from ..logger import logger, daemon_logger
 from ..config import config
@@ -51,18 +52,25 @@ class JobPayloadRequest(BaseModel):
     strategy: str
     assets: List[str]
     interval: str
-    mode: str
+    mode: ExecutionMode
     timeframe: Optional[TimeframeRequest] = None
     multi_asset_mode: Optional[str] = "BATCH"
 
 @app.get("/health")
 def health_check():
+    if redis_client is None:
+        raise HTTPException(status_code=503, detail="Redis client not initialized")
     return {"status": "ok", "redis": redis_client.ping()}
 
 @app.post("/submit")
 def submit_job(payload: JobPayloadRequest):
     """Save job state to Redis and enqueue for background execution."""
     try:
+        if task_queue is None:
+            raise HTTPException(status_code=503, detail="Task queue not initialized")
+        if redis_client is None:
+            raise HTTPException(status_code=503, detail="Redis client not initialized")
+        
         job = JobRegistry(
             strategy_name=payload.strategy,
             parameters=payload.model_dump()
@@ -105,6 +113,9 @@ def submit_job(payload: JobPayloadRequest):
 @app.get("/api/v1/jobs/{job_id}")
 def get_job(job_id: str):
     """Fetch a single job's status from Redis."""
+    if redis_client is None:
+        raise HTTPException(status_code=503, detail="Redis client not initialized")
+    
     job_data = redis_client.hgetall(f"job:{job_id}")
     if not job_data:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -119,6 +130,9 @@ def get_job(job_id: str):
 def list_jobs(limit: int = 50, offset: int = 0):
     """Return an ordered list of jobs using the Redis ZSET."""
     try:
+        if redis_client is None:
+            raise HTTPException(status_code=503, detail="Redis client not initialized")
+        
         # ZREVRANGE returns the newest jobs first
         job_ids = redis_client.zrevrange("jobs:all", offset, offset + limit - 1)
         

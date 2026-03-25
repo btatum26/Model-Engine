@@ -145,6 +145,7 @@ class LocalBacktester:
         """Executes a batch of backtests efficiently by loading the module only once."""
         results = {}
         if not datasets:
+            logger.warning("No datasets provided for batch backtest.")
             return results
 
         try:
