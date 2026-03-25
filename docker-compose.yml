@@ -79,6 +79,7 @@ services:
       - TEST_MODE=true
     volumes:
       - .:/app
+      - /app/.venv # Anonymous volume to hide host .venv from container
       - ./data:/app/data
     # This ensures the main redis is up before testing starts
     depends_on:
