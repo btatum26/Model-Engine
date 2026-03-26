@@ -4,8 +4,8 @@ import pkgutil
 import pandas as pd
 from typing import List, Dict, Any, Optional
 from .base import FEATURE_REGISTRY, FeatureResult, Feature
-from ..logger import logger
-from ..exceptions import FeatureError
+from src.logger import logger
+from src.exceptions import FeatureError, ValidationError
 
 def load_features():
     """
@@ -13,7 +13,7 @@ def load_features():
     to trigger registration of feature classes.
     """
     base_dir = os.path.dirname(__file__)
-    for loader, module_name, is_pkg in pkgutil.walk_packages([base_dir], prefix="src.features."):
+    for loader, module_name, is_pkg in pkgutil.walk_packages([base_dir], prefix="src.engine.features."):
         if not is_pkg:
             # Skip base modules to avoid circular imports
             if module_name.endswith(".base") or module_name.endswith(".features"):

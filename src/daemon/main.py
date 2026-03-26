@@ -8,7 +8,7 @@ from typing import List, Optional
 import redis
 from rq import Queue
 
-from src.controller import ExecutionMode
+from src.engine.controller import ExecutionMode
 from .models import JobRegistry, JobStatus
 from ..logger import logger, daemon_logger
 from ..config import config

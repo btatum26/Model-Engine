@@ -6,12 +6,12 @@ import redis
 from rq import get_current_job
 from .models import JobStatus
 
-# Ensure the root directory is in the path so we can import src.controller
+# Ensure the root directory is in the path so we can import src.engine.controller
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from src.controller import ApplicationController
+from src.engine.controller import ApplicationController
 from src.logger import daemon_logger
 
 # Connect to Redis synchronously for the worker

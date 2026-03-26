@@ -1,5 +1,5 @@
 import numpy as np
-from src.optimization.cpcv_splitter import CPCVSplitter
+from src.engine.optimization.cpcv_splitter import CPCVSplitter
 
 def test_purge_logic():
     splitter = CPCVSplitter()

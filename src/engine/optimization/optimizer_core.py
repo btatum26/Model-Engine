@@ -18,8 +18,8 @@ def evaluate_parameters_joblib(params: dict, features_config: list, strategy_pat
     import sys
     import os
     import importlib.util
-    from src.optimization.local_cache import load_data_from_shm
-    from src.features.features import compute_all_features
+    from src.engine.optimization.local_cache import load_data_from_shm
+    from src.engine.features.features import compute_all_features
 
     df_raw = load_data_from_shm()
     
@@ -55,7 +55,7 @@ def evaluate_parameters_joblib(params: dict, features_config: list, strategy_pat
         
         # Step 4: Instantiate the model
         model_instance = None
-        from src.controller import SignalModel
+        from src.engine.controller import SignalModel
         for obj_name in dir(module):
             obj = getattr(module, obj_name)
             if isinstance(obj, type) and issubclass(obj, SignalModel) and obj is not SignalModel:

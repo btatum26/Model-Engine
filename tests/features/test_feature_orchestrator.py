@@ -1,8 +1,8 @@
 import pytest
 import pandas as pd
 import numpy as np
-from src.features.features import FeatureOrchestrator, FeatureCache
-from src.features.base import Feature, FeatureResult, register_feature, FEATURE_REGISTRY
+from src.engine.features.features import FeatureOrchestrator, FeatureCache
+from src.engine.features.base import Feature, FeatureResult, register_feature, FEATURE_REGISTRY
 from src.exceptions import FeatureError
 
 # Mock feature for testing

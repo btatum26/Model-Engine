@@ -7,16 +7,16 @@ import json
 # Add project root to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.workspace import WorkspaceManager
-from src.backtester import LocalBacktester
-from src.bundler import Bundler
+from src.engine.workspace import WorkspaceManager
+from src.engine.backtester import LocalBacktester
+from src.engine.bundler import Bundler
 
 # 1. Setup Strategy Workspace
 STRAT_DIR = "src/strategies/momentum_surge"
 MODEL_PY_CONTENT = """
 import numpy as np
 import pandas as pd
-from src.controller import SignalModel
+from src.engine.controller import SignalModel
 
 class MomentumSurge(SignalModel):
     def train(self, df, context, params):
@@ -85,7 +85,7 @@ def test_full_flow():
     print(f"Bundle created at: {bundle_path}")
     
     # Mock latest data (with features pre-computed as assumed by node)
-    from src.features.features import compute_all_features
+    from src.engine.features.features import compute_all_features
     df_with_features, _, l_max = compute_all_features(df, features)
     
     # Needs a mock context for Live Node

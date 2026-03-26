@@ -3,7 +3,7 @@ import pandas as pd
 import json
 import os
 import sys
-from src.backtester import LocalBacktester
+from src.engine.backtester import LocalBacktester
 from src.exceptions import StrategyError
 from unittest.mock import patch, MagicMock
 
@@ -38,7 +38,7 @@ def test_dynamic_import_isolation(dummy_strategy):
     # Assert that sys.path is restored
     assert sys.path == original_path
 
-@patch("src.backtester.logger.warning")
+@patch("src.engine.backtester.logger.warning")
 def test_nan_audit_trigger(mock_warning, dummy_strategy):
     backtester = LocalBacktester(dummy_strategy)
     df_with_nans = pd.DataFrame({"feature_1": [1.0, float('nan'), 3.0]})
@@ -47,7 +47,7 @@ def test_nan_audit_trigger(mock_warning, dummy_strategy):
     
     mock_warning.assert_called_once_with("Feature 'feature_1' has 1 NaN values.")
 
-@patch("src.backtester.compute_all_features")
+@patch("src.engine.backtester.compute_all_features")
 def test_single_run_output_shape(mock_compute, dummy_strategy):
     mock_compute.return_value = (pd.DataFrame(index=range(4)), [], [])
     
@@ -60,7 +60,7 @@ def test_single_run_output_shape(mock_compute, dummy_strategy):
     assert len(output) == len(df)
     assert output.index.equals(df.index)
 
-@patch("src.backtester.compute_all_features")
+@patch("src.engine.backtester.compute_all_features")
 def test_single_run_deterministic_values(mock_compute, dummy_strategy):
     # Dummy strategy should output [1.0, -1.0, 1.0, -1.0] for length 4
     df = pd.DataFrame(index=range(4))
@@ -72,7 +72,7 @@ def test_single_run_deterministic_values(mock_compute, dummy_strategy):
     expected = pd.Series([1.0, -1.0, 1.0, -1.0], index=df.index, name="signal")
     pd.testing.assert_series_equal(output, expected)
 
-@patch("src.backtester.compute_all_features")
+@patch("src.engine.backtester.compute_all_features")
 def test_grid_search_permutation_count(mock_compute, dummy_strategy):
     df = pd.DataFrame(index=range(4))
     mock_compute.return_value = (df, [], [])
@@ -85,7 +85,7 @@ def test_grid_search_permutation_count(mock_compute, dummy_strategy):
     assert len(results) == 4
     assert all(isinstance(res, pd.Series) for res in results)
 
-@patch("src.backtester.compute_all_features")
+@patch("src.engine.backtester.compute_all_features")
 def test_grid_search_naming_convention(mock_compute, dummy_strategy):
     df = pd.DataFrame(index=range(4))
     mock_compute.return_value = (df, [], [])

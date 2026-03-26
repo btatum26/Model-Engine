@@ -12,8 +12,8 @@ from .workspace import WorkspaceManager
 from .backtester import LocalBacktester
 from .metrics import Tearsheet
 from .optimization.optimizer_core import OptimizerCore
-from .logger import logger
-from .exceptions import StrategyError, ValidationError
+from src.logger import logger
+from src.exceptions import StrategyError, ValidationError
 
 class ExecutionMode(str, Enum):
     TRAIN = "TRAIN"

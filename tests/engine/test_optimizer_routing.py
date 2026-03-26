@@ -2,8 +2,8 @@ import pytest
 import os
 import pandas as pd
 from unittest.mock import MagicMock
-from src.optimization.local_cache import LocalCache, SHM_PATH, load_data_from_shm
-from src.optimization.optimizer_core import OptimizerCore
+from src.engine.optimization.local_cache import LocalCache, SHM_PATH, load_data_from_shm
+from src.engine.optimization.optimizer_core import OptimizerCore
 
 def test_local_cache_operations():
     cache = LocalCache()

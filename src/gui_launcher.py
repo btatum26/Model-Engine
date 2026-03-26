@@ -9,8 +9,8 @@ from datetime import datetime
 # Add project root to sys.path to allow internal imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.controller import ExecutionMode, JobPayload, Timeframe, MultiAssetMode
-from src.workspace import WorkspaceManager
+from src.engine.controller import ExecutionMode, JobPayload, Timeframe, MultiAssetMode
+from src.engine.workspace import WorkspaceManager
 from src.config import config
 
 class EngineGUI:
@@ -326,7 +326,7 @@ class EngineGUI:
             self._log(f"Bundling {strategy}...")
             strat_path = os.path.join(self.strategies_dir, strategy)
             export_path = "exports"
-            from src.bundler import Bundler
+            from src.engine.bundler import Bundler
             bundle_file = Bundler.export(strat_path, export_path)
             self._log(f"Artifact created: {bundle_file}")
         except Exception as e:
@@ -371,7 +371,7 @@ class EngineGUI:
             
             model_content = """import numpy as np
 import pandas as pd
-from src.controller import SignalModel
+from src.engine.controller import SignalModel
 from .context import Context
 
 class Model(SignalModel):

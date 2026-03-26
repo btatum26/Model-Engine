@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 from datetime import datetime
-from src.controller import ApplicationController, ExecutionMode
+from src.engine.controller import ApplicationController, ExecutionMode
 from src.exceptions import ValidationError as AppValidationError
 from unittest.mock import patch, MagicMock
 import pandas as pd
@@ -18,7 +18,7 @@ def test_payload_validation_failure():
     with pytest.raises(AppValidationError, match="Invalid job payload"):
         controller.execute_job(payload)
 
-@patch("src.controller.ApplicationController._handle_backtest")
+@patch("src.engine.controller.ApplicationController._handle_backtest")
 @patch("os.path.exists")
 def test_route_backtest_dispatch(mock_exists, mock_handle_backtest):
     mock_exists.return_value = True
@@ -40,7 +40,7 @@ def test_route_backtest_dispatch(mock_exists, mock_handle_backtest):
     assert "AAPL" in args[1]
     assert "MSFT" in args[1]
 
-@patch("src.controller.LocalBacktester")
+@patch("src.engine.controller.LocalBacktester")
 @patch("os.path.exists")
 def test_route_signal_only_timestamp(mock_exists, mock_backtester, mock_data_broker):
     mock_exists.return_value = True

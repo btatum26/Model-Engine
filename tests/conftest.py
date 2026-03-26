@@ -42,7 +42,7 @@ def mock_data_broker():
         "Volume": [1000, 1100, 1200]
     }, index=pd.date_range("2023-01-01", periods=3))
     
-    with patch("src.data_broker.data_broker.DataBroker.get_data", return_value=df):
+    with patch("src.engine.data_broker.data_broker.DataBroker.get_data", return_value=df):
         yield df
 
 # 1.3 Conditional Artifact Management Fixture
@@ -89,7 +89,7 @@ def dummy_strategy(tmp_path):
     
     # model.py
     model_content = """import pandas as pd
-from src.controller import SignalModel
+from src.engine.controller import SignalModel
 
 class DummyModel(SignalModel):
     def train(self, df, context, params):

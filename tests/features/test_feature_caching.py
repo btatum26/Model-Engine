@@ -1,7 +1,7 @@
 import pytest
 import pandas as pd
-from src.features.features import FeatureCache, FeatureOrchestrator
-from src.features.base import Feature, FeatureResult, register_feature
+from src.engine.features.features import FeatureCache, FeatureOrchestrator
+from src.engine.features.base import Feature, FeatureResult, register_feature
 from unittest.mock import MagicMock
 
 def test_deterministic_key_generation():

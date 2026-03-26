@@ -2,7 +2,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from unittest.mock import MagicMock, patch
-from src.data_broker.fetcher import DataFetcher
+from src.engine.data_broker.fetcher import DataFetcher
 import tenacity
 
 @pytest.fixture

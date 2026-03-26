@@ -4,12 +4,12 @@ import json
 import pandas as pd
 import numpy as np
 from unittest.mock import patch
-from src.backtester import LocalBacktester
-from src.controller import SignalModel
+from src.engine.backtester import LocalBacktester
+from src.engine.controller import SignalModel
 
 # Define a mock SignalModel subclass for testing
 MOCK_MODEL_CONTENT = """
-from src.controller import SignalModel
+from src.engine.controller import SignalModel
 import pandas as pd
 
 class MockStrategy(SignalModel):
@@ -81,7 +81,7 @@ def test_backtester_run(temp_strategy_dir):
     }, index=dates)
     
     # Mock compute_all_features to avoid actually running feature logic
-    with patch('src.backtester.compute_all_features') as mock_compute:
+    with patch('src.engine.backtester.compute_all_features') as mock_compute:
         mock_compute.return_value = (df, None, 0)
         
         signals = backtester.run(df)
@@ -102,7 +102,7 @@ def test_backtester_grid_search(temp_strategy_dir):
         'Volume': [100] * 10
     }, index=dates)
     
-    with patch('src.backtester.compute_all_features') as mock_compute:
+    with patch('src.engine.backtester.compute_all_features') as mock_compute:
         mock_compute.return_value = (df, None, 0)
         
         results = backtester.run_grid_search(df)

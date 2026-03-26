@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from src.controller import SignalModel
+from src.engine.controller import SignalModel
 
 class Model(SignalModel):
     """

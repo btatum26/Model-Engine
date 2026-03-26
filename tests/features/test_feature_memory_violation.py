@@ -1,8 +1,8 @@
 import pytest
 import pandas as pd
 import numpy as np
-from src.features.base import Feature, FeatureResult, register_feature
-from src.features.features import compute_all_features
+from src.engine.features.base import Feature, FeatureResult, register_feature
+from src.engine.features.features import compute_all_features
 from src.exceptions import FeatureError
 
 @register_feature("MemoryViolator")

@@ -3,7 +3,7 @@ import sys
 import os
 import subprocess
 import pandas as pd
-from src.controller import ApplicationController, JobPayload, ExecutionMode
+from src.engine.controller import ApplicationController, JobPayload, ExecutionMode
 from src.logger import logger
 from src.exceptions import EngineError
 
