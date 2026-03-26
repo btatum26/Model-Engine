@@ -19,7 +19,7 @@ class MockFeature(Feature):
         window = params.get("window", 5)
         # Correct way: return a new series
         series = df['Close'].rolling(window=window).mean()
-        return FeatureResult(visuals=[], data={"mock_feature": series})
+        return FeatureResult(data={"mock_feature": series})
 
 @register_feature("bad_feature")
 class BadFeature(Feature):
@@ -33,7 +33,7 @@ class BadFeature(Feature):
     def compute(self, df, params, cache = None):
         # INCORRECT: modifying df in place
         df['bad'] = df['Close'] * 2
-        return FeatureResult(visuals=[], data={"bad": df['bad']})
+        return FeatureResult(data={"bad": df['bad']})
 
 @register_feature("dependent_feature")
 class DependentFeature(Feature):
@@ -48,7 +48,7 @@ class DependentFeature(Feature):
         # Depends on mock_feature
         dep_series = cache.get_series("mock_feature", {"window": 5}, df)
         result = dep_series * 2
-        return FeatureResult(visuals=[], data={"dependent_feature": result})
+        return FeatureResult(data={"dependent_feature": result})
 
 @pytest.fixture
 def orchestrator():
@@ -61,7 +61,7 @@ def sample_df():
 
 def test_feature_orchestrator_compute(orchestrator, sample_df):
     config = [{"id": "mock_feature", "params": {"window": 3}}]
-    df_out, visuals, l_max = orchestrator.compute_features(sample_df, config)
+    df_out, l_max = orchestrator.compute_features(sample_df, config)
     
     assert "mock_feature" in df_out.columns
     assert df_out["mock_feature"].iloc[2] == 1.0 # (0+1+2)/3
@@ -77,7 +77,7 @@ def test_feature_dependency(orchestrator, sample_df):
         {"id": "mock_feature", "params": {"window": 5}},
         {"id": "dependent_feature", "params": {}}
     ]
-    df_out, _, _ = orchestrator.compute_features(sample_df, config)
+    df_out, _ = orchestrator.compute_features(sample_df, config)
     
     assert "mock_feature" in df_out.columns
     assert "dependent_feature" in df_out.columns

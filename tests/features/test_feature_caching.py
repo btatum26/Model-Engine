@@ -29,7 +29,7 @@ class MockFeature(Feature):
     
     def compute(self, df, params, cache):
         MockFeature.compute_count += 1
-        return FeatureResult(data={"mock": df["close"]}, visuals=[])
+        return FeatureResult(data={"mock": df["close"]})
 
 def test_feature_cache_hit():
     cache = FeatureCache()

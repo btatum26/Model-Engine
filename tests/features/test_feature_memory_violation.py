@@ -17,7 +17,7 @@ class MemoryViolator(Feature):
     def compute(self, df: pd.DataFrame, params: dict, cache) -> FeatureResult:
         # In-place assignment that triggers the memory violation check
         df["violator"] = df["close"] * 2
-        return FeatureResult(data={"violator": df["violator"]}, visuals=[])
+        return FeatureResult(data={"violator": df["violator"]})
 
 def test_feature_memory_violation_catch():
     df = pd.DataFrame({"close": np.random.randn(100)})

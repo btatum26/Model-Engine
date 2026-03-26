@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Optional
 import pandas as pd
 import numpy as np
-from ..base import Feature, FeatureResult, register_feature, LineOutput, MarkerOutput
+from ..base import Feature, FeatureResult, register_feature
 from .rsi import RSI
 
 @register_feature("RSI_Divergence_Features")
