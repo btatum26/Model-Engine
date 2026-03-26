@@ -1,3 +1,9 @@
+"""Feature execution and orchestration framework.
+
+This module manages the dynamic loading, dependency caching, and safe 
+execution of computational features across a primary dataset.
+"""
+
 import os
 import importlib
 import pkgutil
@@ -8,14 +14,16 @@ from src.logger import logger
 from src.exceptions import FeatureError, ValidationError
 
 def load_features():
-    """
-    Dynamically imports all modules in the features subdirectories 
-    to trigger registration of feature classes.
+    """Dynamically loads and registers all feature modules.
+    
+    This function traverses the features directory, importing each module 
+    to trigger the `@register_feature` decorators, thereby populating the 
+    global feature registry. Base and utility modules are skipped to avoid 
+    circular dependencies.
     """
     base_dir = os.path.dirname(__file__)
     for loader, module_name, is_pkg in pkgutil.walk_packages([base_dir], prefix="src.engine.features."):
         if not is_pkg:
-            # Skip base modules to avoid circular imports
             if module_name.endswith(".base") or module_name.endswith(".features"):
                 continue
             try:
@@ -23,24 +31,49 @@ def load_features():
             except Exception as e:
                 logger.error(f"Failed to load feature module {module_name}: {e}")
 
-# Initial load to populate the feature registry
 load_features()
 
 class FeatureCache:
-    """Manages in-memory caching of computed feature series."""
+    """Manages in-memory caching of computed feature series.
+    
+    This system prevents redundant computation of shared dependencies (like moving 
+    averages) across multiple distinct features during an orchestration pass.
+    """
     
     def __init__(self):
+        """Initializes the empty dictionary used for memory storage."""
         self._memory: Dict[str, pd.Series] = {}
 
     def _generate_key(self, feature_id: str, params: Dict[str, Any]) -> str:
-        """Generates a unique cache key based on feature ID and parameters."""
+        """Generates a unique cache key based on feature ID and parameters.
+
+        Args:
+            feature_id (str): The unique identifier of the feature.
+            params (Dict[str, Any]): The parameters used for computation.
+
+        Returns:
+            str: A deterministic string key.
+        """
         if not params:
             return feature_id
         param_str = "_".join([f"{k}{v}" for k, v in sorted(params.items())])
         return f"{feature_id}_{param_str}"
 
     def get_series(self, feature_id: str, params: Dict[str, Any], df: pd.DataFrame) -> pd.Series:
-        """Retrieves a feature series from cache or computes it if missing."""
+        """Retrieves a feature series from cache or computes it if missing.
+
+        Args:
+            feature_id (str): The string identifier of the requested feature.
+            params (Dict[str, Any]): The required parameters for computation.
+            df (pd.DataFrame): The base market dataset.
+
+        Returns:
+            pd.Series: The fully computed feature data series.
+
+        Raises:
+            FeatureError: If the feature is not found, returns no data, or violates 
+                memory safety by altering the base DataFrame.
+        """
         key = self._generate_key(feature_id, params)
         
         if key in self._memory:
@@ -52,12 +85,10 @@ class FeatureCache:
         feature_cls = FEATURE_REGISTRY[feature_id]
         feature_instance = feature_cls()
         
-        # Verify that the feature does not modify the input DataFrame
         initial_col_count = len(df.columns)
         try:
             result: FeatureResult = feature_instance.compute(df, params, self)
         except ValueError as e:
-            # Catch common errors related to read-only views
             if "read-only" in str(e).lower() or "not writable" in str(e).lower():
                 self._raise_memory_violation(feature_id, is_dependency=True)
             raise e
@@ -81,11 +112,25 @@ class FeatureCache:
         return primary_series
 
     def set_series(self, key: str, series: pd.Series):
-        """Manually adds a series to the cache."""
+        """Manually injects a computed series into the memory cache.
+
+        Args:
+            key (str): The unique retrieval key.
+            series (pd.Series): The computed data to store.
+        """
         self._memory[key] = series
 
     def _raise_memory_violation(self, feature_id: str, is_dependency: bool = False):
-        """Centralized error for in-place DataFrame mutations."""
+        """Raises a standardized error when in-place DataFrame mutations are detected.
+
+        Args:
+            feature_id (str): The identifier of the violating feature.
+            is_dependency (bool, optional): Indicates if the violation occurred while 
+                computing a cached dependency. Defaults to False.
+
+        Raises:
+            FeatureError: The formulated error message regarding memory modification.
+        """
         dep_str = "dependency " if is_dependency else ""
         error_msg = (
             f"Feature {dep_str}'{feature_id}' attempted to mutate the input DataFrame in place. "
@@ -95,10 +140,18 @@ class FeatureCache:
         raise FeatureError(error_msg)
 
 class FeatureOrchestrator:
-    """Handles the batch computation of multiple features."""
+    """Handles the batch computation and safety validation of multiple features."""
 
     def validate_config(self, feature_config: List[Dict[str, Any]]):
-        """Validates the feature configuration list."""
+        """Validates the structure and validity of the requested feature configuration.
+
+        Args:
+            feature_config (List[Dict[str, Any]]): The list of feature request configurations.
+
+        Raises:
+            ValidationError: If a configuration lacks an ID, or if the ID does not 
+                exist in the active registry.
+        """
         for config in feature_config:
             feature_id = config.get("id")
             if not feature_id:
@@ -106,14 +159,13 @@ class FeatureOrchestrator:
             if feature_id not in FEATURE_REGISTRY:
                 raise ValidationError(f"Feature '{feature_id}' not found in registry.")
 
-    def compute_features(self, df: pd.DataFrame, feature_config: List[Dict[str, Any]]) -> tuple[pd.DataFrame, List[Any], int]:
-        """
-        Executes a batch computation of multiple features sequentially.
+    def compute_features(self, df: pd.DataFrame, feature_config: List[Dict[str, Any]]) -> tuple[pd.DataFrame, int]:
+        """Executes a batch computation of multiple features sequentially.
 
-        This orchestrator iterates through a JSON-like configuration of requested 
-        features, instantiates them from the global registry, and manages a shared 
-        `FeatureCache` to optimize cross-feature dependencies. It strictly enforces 
-        memory safety by ensuring no feature mutates the original dataset.
+        This orchestrator iterates through a configuration of requested features, 
+        instantiates them from the global registry, and manages a shared cache to 
+        optimize dependencies. It strictly enforces memory safety by ensuring no 
+        feature mutates the original dataset.
 
         Args:
             df (pd.DataFrame): The base OHLCV dataset. 
@@ -123,22 +175,19 @@ class FeatureOrchestrator:
         Returns:
             tuple:
                 - pd.DataFrame: A newly concatenated DataFrame containing the original 
-                  OHLCV data PLUS all newly computed feature columns.
-                - List[Any]: A flattened list of `FeatureOutput` dataclasses containing 
-                  the visual rendering instructions for all computed features.
-                - int: The maximum lookback window (`l_max`) discovered across all 
-                  feature parameters. This is critical for the `ml_bridge` to know 
-                  how many rows to drop to avoid NaN-induced data leakage.
+                  OHLCV data alongside all newly computed feature columns.
+                - List[Any]: A flattened list of rendering instructions.
+                - int: The maximum lookback window discovered across all feature 
+                  parameters, required for safe data truncation downstream.
 
         Raises:
-            ValidationError: If a requested feature ID is missing from the configuration 
-                or not found in the `FEATURE_REGISTRY`.
-            FeatureError: If a child feature attempts an in-place mutation of the DataFrame.
+            ValidationError: If configuration validation fails.
+            FeatureError: If a child feature attempts an in-place mutation, or 
+                if general computation fails.
         """
         self.validate_config(feature_config)
 
         computed_features = {}
-        visuals_master_list = []
         l_max = 0
         lookback_keys = ["window", "period", "slow", "fast", "lookback"]
 
@@ -148,7 +197,6 @@ class FeatureOrchestrator:
             feature_id = config.get("id")
             params = config.get("params", {})
 
-            # Track the maximum lookback window required
             for k, v in params.items():
                 if k.lower() in lookback_keys and isinstance(v, (int, float)):
                     l_max = max(l_max, int(v))
@@ -156,7 +204,6 @@ class FeatureOrchestrator:
             feature_cls = FEATURE_REGISTRY[feature_id]
             feature_instance = feature_cls()
 
-            # Ensure data integrity by checking column counts
             initial_col_count = len(df.columns)
             try:
                 result: FeatureResult = feature_instance.compute(df, params, cache)
@@ -177,19 +224,22 @@ class FeatureOrchestrator:
                         computed_features[col_name] = series
                         cache.set_series(col_name, series)
 
-            if result.visuals:
-                visuals_master_list.extend(result.visuals)
-
-        # Merge new features into the main DataFrame
         if computed_features:
             new_features_df = pd.DataFrame(computed_features)
             df = pd.concat([df, new_features_df], axis=1)
             df = df.loc[:, ~df.columns.duplicated()]
 
-        return df, visuals_master_list, l_max
+        return df, l_max
 
     def _raise_memory_violation(self, feature_id: str):
-        """Centralized error for in-place DataFrame mutations."""
+        """Raises a standardized error when in-place DataFrame mutations are detected.
+
+        Args:
+            feature_id (str): The identifier of the violating feature.
+
+        Raises:
+            FeatureError: The formulated error message regarding memory modification.
+        """
         error_msg = (
             f"Feature '{feature_id}' attempted to mutate the input DataFrame in place. "
             f"Features must return new Series objects instead of assigning new columns to the input df."
@@ -200,5 +250,13 @@ class FeatureOrchestrator:
 orchestrator = FeatureOrchestrator()
 
 def compute_all_features(df: pd.DataFrame, feature_config: List[Dict[str, Any]]):
-    """Utility function for high-level feature computation."""
+    """Utility function wrapper for high-level feature batch computation.
+
+    Args:
+        df (pd.DataFrame): The base market dataset.
+        feature_config (List[Dict[str, Any]]): The list of requested features.
+
+    Returns:
+        tuple: See FeatureOrchestrator.compute_features for exact return types.
+    """
     return orchestrator.compute_features(df, feature_config)

@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
-from ..base import Feature, LineOutput, LevelOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("RSI")
 class RSI(Feature):
@@ -16,28 +16,10 @@ class RSI(Feature):
     @property
     def category(self) -> str:
         return "Oscillators (Momentum)"
-
+    
     @property
-    def target_pane(self) -> str:
-        return "new"
-
-    @property
-    def y_range(self) -> List[float]:
-        return [0, 100]
-
-    @property
-    def y_padding(self) -> float:
-        return 0.05
-
-    @property
-    def parameters(self) -> Dict[str, Any]:
-        return {
-            "period": 14,
-            "overbought": 70,
-            "oversold": 30,
-            "normalize": "none",
-            "color": "#aaff00"
-        }
+    def outputs(self) -> List[str | None]:
+        return [None]
 
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         period = int(params.get("period", 14))
@@ -62,18 +44,7 @@ class RSI(Feature):
         
         col_name = self.generate_column_name("RSI", params)
         
-        visuals = [
-            LineOutput(
-                name=col_name,
-                data=rsi.where(pd.notnull(rsi), None).tolist(),
-                color=color,
-                width=2
-            ),
-            LevelOutput(name="Overbought", min_price=ob, max_price=ob, color="#ff4444"),
-            LevelOutput(name="Oversold", min_price=os, max_price=os, color="#44ff44")
-        ]
-        
         # Apply normalization to the bounded RSI series
         final_data = self.normalize(df, rsi, norm_method)
         
-        return FeatureResult(visuals=visuals, data={col_name: final_data})
+        return FeatureResult(data={col_name: final_data})

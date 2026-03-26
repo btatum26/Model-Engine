@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from scipy.signal import savgol_filter
 from sklearn.cluster import AgglomerativeClustering
-from ..base import Feature, FeatureOutput, LevelOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("SupportResistance")
 class SupportResistance(Feature):
@@ -89,25 +89,7 @@ class SupportResistance(Feature):
             col_last_res: rolling_res.fillna(df['Close'])
         }
 
-        # GUI Visuals: Cluster recent pivots into significant price levels
-        visuals = []
-        if pivots:
-            # Cluster recent relevant pivots to identify strong visual levels
-            recent_pivots = pivots[-50:] if len(pivots) > 50 else pivots
-            clusters = self.cluster_pivots(recent_pivots, cluster_thresh)
-            
-            for c in clusters:
-                if c['strength'] >= min_str:
-                    visuals.append(LevelOutput(
-                        name=f"Level {c['price']}",
-                        price=c['price'],
-                        min_price=c['min_price'],
-                        max_price=c['max_price'],
-                        strength=c['strength'],
-                        color='#0000ff'
-                    ))
-
-        return FeatureResult(visuals=visuals, data=data_dict)
+        return FeatureResult(data=data_dict)
 
     # --- Pivot Extraction Methods ---
 

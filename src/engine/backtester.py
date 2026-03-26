@@ -132,7 +132,7 @@ class LocalBacktester:
             features_config = self.manifest.get('features', [])
             
             # Universal Feature Calculation
-            df_full, visuals, l_max = compute_all_features(raw_data, features_config)
+            df_full, l_max = compute_all_features(raw_data, features_config)
             
             # Universal Warmup Purge (Protects both ML and Rule-Based from NaN lookbacks)
             df_clean = df_full.iloc[l_max:].copy()
@@ -196,7 +196,7 @@ class LocalBacktester:
                 return [self.run(raw_data)]
 
             features_config = self.manifest.get('features', [])
-            df_full, _, l_max = compute_all_features(raw_data, features_config)
+            df_full, l_max = compute_all_features(raw_data, features_config)
             
             # Apply Universal Warmup Purge
             df_clean = df_full.iloc[l_max:].copy()

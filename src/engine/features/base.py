@@ -1,3 +1,9 @@
+"""Base classes and data structures for the quantitative feature engineering system.
+
+This module defines the core contracts, output structures, and global registry 
+used to build and compute financial indicators or features consistently.
+"""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional, Type, TYPE_CHECKING
@@ -10,12 +16,16 @@ if TYPE_CHECKING:
 FEATURE_REGISTRY: Dict[str, Type['Feature']] = {}
 
 def register_feature(name: str):
-    """
-    Decorator to register a Feature class into the global registry.
-    Usage:
-    @register_feature("RSI")
-    class RSI(Feature):
-        ...
+    """Registers a Feature class into the global system registry.
+
+    This decorator allows feature classes to be dynamically discovered and 
+    instantiated by the orchestrator using their string identifier.
+
+    Args:
+        name (str): The unique identifier for the feature (e.g., "RSI", "MACD").
+
+    Returns:
+        Callable: The decorated class, now accessible via the global registry.
     """
     def decorator(cls: Type['Feature']):
         FEATURE_REGISTRY[name] = cls
@@ -24,82 +34,52 @@ def register_feature(name: str):
 
 # --- Output Types ---
 @dataclass
-class FeatureOutput:
-    name: str
-    color: str = 'white'
-
-@dataclass
-class LineOutput(FeatureOutput):
-    data: List[float] = None # Matches length of DF
-    width: int = 1
-
-@dataclass
-class LevelOutput(FeatureOutput):
-    price: float = 0.0
-    min_price: float = 0.0
-    max_price: float = 0.0
-    strength: float = 0.0
-
-@dataclass
-class MarkerOutput(FeatureOutput):
-    indices: List[int] = None
-    values: List[float] = None
-    shape: str = 'o' # 'o', 't', 's', 'd', '+', 'x'
-
-@dataclass
-class HeatmapOutput(FeatureOutput):
-    """
-    Represents a vertical density gradient (e.g. for KDE).
-    price_grid: Array of price points (Y-axis)
-    density: Array of density values (0.0 to 1.0) for each price point.
-    """
-    price_grid: List[float] = None
-    density: List[float] = None
-    color_map: str = 'plasma' # matplotlib colormap name or similar
-
-@dataclass
 class FeatureResult:
-    visuals: List[FeatureOutput]
-    data: Dict[str, pd.Series] = None # Raw numerical data for signal extraction
+    """Strict payload returned by a Feature's compute method.
+    
+    Attributes:
+        visuals (List[FeatureOutput]): GUI rendering instructions.
+        data (Dict[str, pd.Series]): The raw numerical series intended for the ML bridge.
+    """
+    data: Dict[str, pd.Series] = None 
 
 # --- Base Feature Class ---
 class Feature(ABC):
+    """Abstract Base Class for quantitative indicators and features.
+    
+    This class enforces strict contracts for feature generation, ensuring 
+    vectorized computation, memory safety, and standardized output formats 
+    across the entire system.
     """
-    Abstract Base Class for all Stock Bot Features.
-    """
+    
     @staticmethod
     def generate_column_name(feature_id: str, params: Dict[str, Any], output_name: Optional[str] = None) -> str:
+        """Standardizes pandas DataFrame column naming to ensure consistency.
+
+        Args:
+            feature_id (str): The base name of the feature.
+            params (Dict[str, Any]): The hyperparameter dictionary used for calculation.
+            output_name (Optional[str], optional): Suffix for multi-output features. 
+                Defaults to None.
+
+        Returns:
+            str: The deterministic column name based on parameters.
         """
-        Standardizes column naming across the system.
-        Example: RSI + {period: 14} -> RSI_14
-        Example: MACD + {fast: 12, slow: 26} + signal -> MACD_12_26_SIGNAL
-        """
-        # Prefix for normalized features
         norm = params.get("normalize", "none")
         prefix = "Norm_" if norm != "none" else ""
         
-        # Identify core parameters (ignoring visual ones like color)
-        # We assume parameters that affect calculation are integers or floats
-        # and not strings like color or normalize
         ignored_keys = ["color", "normalize", "overbought", "oversold"]
-        core_params = {
-            k: v for k, v in params.items() 
-            if k not in ignored_keys and not k.startswith("color_")
-        }
+        core_params = {k: v for k, v in params.items() if k not in ignored_keys and not k.startswith("color_")}
         
-        # If the feature ID is already descriptive (like SMA or EMA), 
-        # remove the 'type' parameter from core_params to avoid redundancy (e.g., SMA_50_SMA)
         if "type" in core_params and str(core_params["type"]).upper() == feature_id.upper():
             del core_params["type"]
 
-        # Simple Case: If there's only a 'period' or 'window', just use that number
         if len(core_params) == 1 and ("period" in core_params or "window" in core_params):
             val = core_params.get("period") or core_params.get("window")
             base = f"{feature_id}_{val}"
         elif not core_params:
             base = feature_id
         else:
-            # Complex Case: Join all sorted core params
             param_str = "_".join([f"{v}" for k, v in sorted(core_params.items())])
             base = f"{feature_id}_{param_str}"
             
@@ -107,92 +87,79 @@ class Feature(ABC):
         return f"{prefix}{base}{suffix}"
 
     @property
-    def outputs(self) -> List[str]:
-        """
-        List of raw data column suffixes produced by this feature.
-        Example: MACD returns ['macd', 'signal', 'hist']
-        Example: RSI returns [None] (primary output)
+    def outputs(self) -> List[Optional[str]]:
+        """Defines the raw data column suffixes produced by this feature.
+
+        Returns:
+            List[Optional[str]]: A list of string suffixes, or a list containing 
+                None if the feature produces a single primary output.
         """
         return [None]
 
     @property
-    def target_pane(self) -> str:
-        """
-        'main': Overlay on price chart.
-        'new': Create a new subplot below.
-        """
-        return "main"
-
-    @property
     @abstractmethod
     def name(self) -> str:
-        """Display name of the feature."""
+        """Returns the display name of the feature."""
         pass
 
     @property
     @abstractmethod
     def description(self) -> str:
-        """Short description of what the feature does."""
+        """Returns a brief description of the feature's logic."""
         pass
 
     @property
     @abstractmethod
     def category(self) -> str:
-        """Category of the feature (e.g., 'Price Levels', 'Trend', 'Volume')."""
+        """Returns the categorization grouping of the feature."""
         pass
 
     @property
     def parameters(self) -> Dict[str, Any]:
-        """
-        Dictionary of default parameters.
-        Example: {'window': 14, 'threshold': 0.01}
+        """Provides the default parameters required for computation.
+
+        Returns:
+            Dict[str, Any]: A dictionary of parameter keys and default values.
         """
         return {}
 
     @property
     def parameter_options(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Optional metadata for parameters (e.g., min, max, type).
-        Example: {'window': {'min': 1, 'max': 100, 'type': 'int'}}
+        """Provides metadata defining the bounds and types of parameters.
+
+        Returns:
+            Dict[str, Dict[str, Any]]: Configuration dictionaries for each parameter.
         """
         return {}
-
-    @property
-    def y_range(self) -> Optional[List[float]]:
-        """
-        Fixed Y-axis range [min, max].
-        None if dynamic/data-driven.
-        """
-        return None
-
-    @property
-    def y_padding(self) -> float:
-        """
-        Default Y-axis padding (0.1 = 10% of data height).
-        """
-        return 0.1
     
     def normalize(self, df: pd.DataFrame, series: pd.Series, method: str, window: int = 20) -> pd.Series:
-        """
-        Systematically normalizes raw indicator data for Machine Learning.
+        """Systematically normalizes raw indicator data for downstream machine learning.
+
+        Args:
+            df (pd.DataFrame): The base market dataset containing price information.
+            series (pd.Series): The raw computed indicator series.
+            method (str): The string identifier for the normalization strategy 
+                ('pct_distance', 'price_ratio', 'z_score', or 'none').
+            window (int, optional): The rolling window used for z-score calculations. 
+                Defaults to 20.
+
+        Returns:
+            pd.Series: The normalized data series.
+
+        Raises:
+            ValueError: If an unsupported normalization method is requested.
         """
         if method == "none" or not method:
             return series
             
-        # Ensure we have consistent column access
         close = df['Close'] if 'Close' in df.columns else df['close']
             
-        # Percentage Distance from Price (For MAs, VWAP, Support/Resistance)
         if method == "pct_distance":
-            # (Price - Indicator) / Indicator -> Output is a % (e.g., +0.02 means price is 2% above MA)
             return (close - series) / series.replace(0, 1e-9)
             
-        # Ratio to Price (For ATR, Bollinger Width)
         elif method == "price_ratio":
-            # Indicator / Price -> (e.g., ATR is 1.5% of the current stock price)
             return series / close.replace(0, 1e-9)
             
-        # Z-Score (For Volume, or unbounded oscillators)
         elif method == "z_score":
             rolling_mean = series.rolling(window=window).mean()
             rolling_std = series.rolling(window=window).std().replace(0, 1e-9)
@@ -203,32 +170,23 @@ class Feature(ABC):
 
     @abstractmethod
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Optional['FeatureCache'] = None) -> FeatureResult:
-        """
-        Executes the core mathematical logic for the feature.
+        """Executes the core mathematical logic for the feature.
 
         This method must be strictly vectorized. It receives the raw price data 
         and is responsible for calculating the indicator series without mutating 
-        the input DataFrame. Any intermediate calculations that might be reused 
-        by other features should be requested from or stored in the cache.
+        the input DataFrame. Intermediate computations should leverage the cache.
 
         Args:
-            df (pd.DataFrame): The raw market data. Must contain standard OHLCV 
-                columns ('Open', 'High', 'Low', 'Close', 'Volume'). It is heavily 
-                recommended that the index is a strictly sorted DatetimeIndex.
-            params (Dict[str, Any]): The hyperparameter dictionary for this feature 
-                (e.g., {'window': 14, 'smoothing': 'ema'}). Must align with the 
-                keys defined in `parameters` property.
-            cache (FeatureCache, optional): The singleton cache instance used to 
-                fetch dependency series (like a shared SMA) to prevent redundant 
-                computation. Defaults to None.
+            df (pd.DataFrame): The raw market data containing OHLCV columns.
+            params (Dict[str, Any]): The hyperparameter dictionary for calculation.
+            cache (Optional[FeatureCache], optional): Shared cache instance used to 
+                fetch or store dependency series. Defaults to None.
 
         Returns:
-            FeatureResult: A strictly typed dataclass containing the visual output 
-                instructions (for the GUI) and the raw calculated `pd.Series` objects 
-                (for the ML Bridge).
+            FeatureResult: Dataclass containing visual instructions and raw data.
 
         Raises:
-            ValueError: If required columns are missing from the input DataFrame.
-            FeatureError: If the feature attempts to mutate the input `df` in-place.
+            ValueError: If necessary market data columns are missing.
+            FeatureError: If the function attempts an in-place mutation of the DataFrame.
         """
         pass

@@ -1,9 +1,16 @@
 from typing import Dict, Any, List
 import pandas as pd
-from ..base import Feature, LineOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("MACD")
 class MACD(Feature):
+    """
+    Computes the Moving Average Convergence Divergence (MACD).
+    
+    Returns a three-part oscillator comprising the MACD line, the Signal line, 
+    and the Histogram difference between the two.
+    """
+    
     @property
     def name(self) -> str:
         return "MACD"
@@ -36,6 +43,12 @@ class MACD(Feature):
         }
 
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
+        """
+        Calculates the MACD components vectorically.
+
+        Requires 'Close' or 'close' in the input DataFrame. If a FeatureCache is 
+        provided, it attempts to fetch underlying EMA calculations to save CPU cycles.
+        """
         fast = int(params.get("fast_period", 12))
         slow = int(params.get("slow_period", 26))
         signal = int(params.get("signal_period", 9))

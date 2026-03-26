@@ -8,12 +8,24 @@ class MomentumSurge(SignalModel):
         return {}
 
     def generate_signals(self, df, context, params, artifacts):
-        # Use auto-generated context
-        # RSI will map to "RSI_14" in df
         rsi_val = df[context.RSI]
+        sma_val = df[context.SMA]
+        macd_hist = df[context.MACD_HIST]
         
-        condition_long = (rsi_val < params['rsi_lower'])
-        condition_short = (rsi_val > params['rsi_upper'])
+        # Standardize on 'close' (handling potential capitalization differences)
+        close_price = df['close'] if 'close' in df.columns else df['Close']
+        
+        condition_long = (
+            (close_price > sma_val) & 
+            (rsi_val < params['rsi_upper']) & 
+            (macd_hist > 0.0)
+        )
+        
+        condition_short = (
+            (close_price < sma_val) & 
+            (rsi_val > params['rsi_lower']) & 
+            (macd_hist < 0.0)
+        )
         
         signals = np.select(
             [condition_long, condition_short], 

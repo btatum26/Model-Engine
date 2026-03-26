@@ -1,6 +1,6 @@
 from typing import Dict, Any, List, Optional
 import pandas as pd
-from ..base import Feature, LineOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("MovingAverage")
 class MovingAverage(Feature):
@@ -22,7 +22,6 @@ class MovingAverage(Feature):
             "period": 50,
             "type": "SMA",
             "normalize": "none",
-            "color": "#ff9900"
         }
         
     @property
@@ -34,7 +33,6 @@ class MovingAverage(Feature):
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         period = int(params.get("period", 50))
         ma_type = params.get("type", "SMA")
-        color = params.get("color", "#ff9900")
         norm_method = params.get("normalize", "none")
         
         close = df['Close'] if 'Close' in df.columns else df['close']
@@ -54,20 +52,11 @@ class MovingAverage(Feature):
             feat_id = "EMA"
             
         col_name = self.generate_column_name(feat_id, params)
-
-        visuals = [
-            LineOutput(
-                name=col_name,
-                data=ma.where(pd.notnull(ma), None).tolist(),
-                color=color,
-                width=2
-            )
-        ]
         
         # Apply systematic normalization
         final_data = self.normalize(df, ma, norm_method)
         
-        return FeatureResult(visuals=visuals, data={col_name: final_data})
+        return FeatureResult(data={col_name: final_data})
 
 @register_feature("EMA")
 class EMA(MovingAverage):
