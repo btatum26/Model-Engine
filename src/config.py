@@ -13,6 +13,8 @@ class Config:
     REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
     REDIS_DB = int(os.getenv("REDIS_DB", 0))
     
+    FRED_API_KEY = os.getenv("FRED_API_KEY")
+    
     @property
     def api_url(self):
         """Returns the full base URL for the API."""

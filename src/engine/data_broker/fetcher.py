@@ -4,8 +4,8 @@ import pandas as pd
 import requests
 import requests_cache
 from datetime import datetime
-import pandas_datareader.data as web
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
+from src.config import config
 
 # 1. Anomaly Logging
 logging.basicConfig(
@@ -21,6 +21,7 @@ class DataFetcher:
     def __init__(self, av_api_key: str = "YOUR_FREE_KEY"):
         self.session = session
         self.av_api_key = av_api_key
+        self.FRED_API_KEY = config.FRED_API_KEY  # Access FRED API key from config
 
     def _sanitize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """API Data Sanitization Layer: Drop NaNs and invalid rows."""
@@ -29,6 +30,7 @@ class DataFetcher:
         if len(df) < original_len:
             logging.warning(f"Sanitization dropped {original_len - len(df)} rows containing NaN.")
         return df
+    
 
     @retry(wait=wait_exponential(multiplier=1, min=2, max=10), stop=stop_after_attempt(3))
     def fetch_ohlcv(self, ticker: str, interval: str, start: str, end: str) -> pd.DataFrame:
@@ -100,13 +102,43 @@ class DataFetcher:
             return {}
 
     def fetch_macro_data(self, indicator: str, start: str, end: str) -> pd.DataFrame:
-        """Fetches Macro data from FRED API."""
+        """Fetches Macro data directly from the official FRED API."""
+        if not config.FRED_API_KEY:
+            logging.error("FRED API key not configured. Check your .env and config.")
+            return pd.DataFrame()
+
+        # Official FRED API Endpoint for series observations
+        url = "https://api.stlouisfed.org/fred/series/observations"
+        
+        params = {
+            "series_id": indicator,
+            "api_key": config.FRED_API_KEY,
+            "file_type": "json",
+            "observation_start": start,
+            "observation_end": end,
+        }
+
         try:
-            df = web.DataReader(indicator, 'fred', start, end)
-            df = df.reset_index()
-            df.rename(columns={'DATE': 'date', indicator: 'value'}, inplace=True)
+            # Using your existing cached requests session!
+            response = self.session.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            if "observations" not in data or not data["observations"]:
+                logging.warning(f"No FRED observations found for {indicator}.")
+                return pd.DataFrame()
+
+            # Convert JSON observations to a pandas DataFrame
+            df = pd.DataFrame(data["observations"])
+            
+            # Keep only the relevant columns and map them to your system's schema
+            df = df[['date', 'value']]
+            df['date'] = pd.to_datetime(df['date'])
+            df['value'] = pd.to_numeric(df['value'], errors='coerce')
             df['indicator_name'] = indicator
+            
             return self._sanitize_dataframe(df)
+
         except Exception as e:
-            logging.error(f"Failed to fetch FRED data for {indicator}: {e}")
+            logging.error(f"Failed to fetch direct FRED data for {indicator}: {e}")
             return pd.DataFrame()

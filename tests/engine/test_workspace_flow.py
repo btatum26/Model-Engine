@@ -86,7 +86,7 @@ def test_full_flow():
     
     # Mock latest data (with features pre-computed as assumed by node)
     from src.features.features import compute_all_features
-    df_with_features, _, l_max = compute_all_features(df, node.config['features'])
+    df_with_features, _, l_max = compute_all_features(df, features)
     
     # Needs a mock context for Live Node
     class MockContext:

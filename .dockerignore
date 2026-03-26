@@ -12,3 +12,4 @@ exports/
 GEMINI.md
 README.md
 .python-version
+.env

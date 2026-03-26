@@ -107,7 +107,34 @@ class FeatureOrchestrator:
                 raise ValidationError(f"Feature '{feature_id}' not found in registry.")
 
     def compute_features(self, df: pd.DataFrame, feature_config: List[Dict[str, Any]]) -> tuple[pd.DataFrame, List[Any], int]:
-        """Executes feature computation based on the provided configuration."""
+        """
+        Executes a batch computation of multiple features sequentially.
+
+        This orchestrator iterates through a JSON-like configuration of requested 
+        features, instantiates them from the global registry, and manages a shared 
+        `FeatureCache` to optimize cross-feature dependencies. It strictly enforces 
+        memory safety by ensuring no feature mutates the original dataset.
+
+        Args:
+            df (pd.DataFrame): The base OHLCV dataset. 
+            feature_config (List[Dict[str, Any]]): A list of feature request payload 
+                dictionaries. Example: `[{"id": "RSI", "params": {"window": 14}}]`.
+
+        Returns:
+            tuple:
+                - pd.DataFrame: A newly concatenated DataFrame containing the original 
+                  OHLCV data PLUS all newly computed feature columns.
+                - List[Any]: A flattened list of `FeatureOutput` dataclasses containing 
+                  the visual rendering instructions for all computed features.
+                - int: The maximum lookback window (`l_max`) discovered across all 
+                  feature parameters. This is critical for the `ml_bridge` to know 
+                  how many rows to drop to avoid NaN-induced data leakage.
+
+        Raises:
+            ValidationError: If a requested feature ID is missing from the configuration 
+                or not found in the `FEATURE_REGISTRY`.
+            FeatureError: If a child feature attempts an in-place mutation of the DataFrame.
+        """
         self.validate_config(feature_config)
 
         computed_features = {}

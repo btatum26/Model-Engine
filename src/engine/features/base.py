@@ -1,7 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional, Type
+from typing import List, Dict, Any, Optional, Type, TYPE_CHECKING
 import pandas as pd
+
+if TYPE_CHECKING:
+    from .features import FeatureCache
 
 # Global Registry
 FEATURE_REGISTRY: Dict[str, Type['Feature']] = {}
@@ -199,9 +202,33 @@ class Feature(ABC):
             raise ValueError(f"Unknown normalization method: {method}")
 
     @abstractmethod
-    def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
+    def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Optional['FeatureCache'] = None) -> FeatureResult:
         """
-        Main logic. Receives OHLCV DataFrame, parameters, and the FeatureCache.
-        Returns a FeatureResult containing visual outputs and raw data.
+        Executes the core mathematical logic for the feature.
+
+        This method must be strictly vectorized. It receives the raw price data 
+        and is responsible for calculating the indicator series without mutating 
+        the input DataFrame. Any intermediate calculations that might be reused 
+        by other features should be requested from or stored in the cache.
+
+        Args:
+            df (pd.DataFrame): The raw market data. Must contain standard OHLCV 
+                columns ('Open', 'High', 'Low', 'Close', 'Volume'). It is heavily 
+                recommended that the index is a strictly sorted DatetimeIndex.
+            params (Dict[str, Any]): The hyperparameter dictionary for this feature 
+                (e.g., {'window': 14, 'smoothing': 'ema'}). Must align with the 
+                keys defined in `parameters` property.
+            cache (FeatureCache, optional): The singleton cache instance used to 
+                fetch dependency series (like a shared SMA) to prevent redundant 
+                computation. Defaults to None.
+
+        Returns:
+            FeatureResult: A strictly typed dataclass containing the visual output 
+                instructions (for the GUI) and the raw calculated `pd.Series` objects 
+                (for the ML Bridge).
+
+        Raises:
+            ValueError: If required columns are missing from the input DataFrame.
+            FeatureError: If the feature attempts to mutate the input `df` in-place.
         """
         pass

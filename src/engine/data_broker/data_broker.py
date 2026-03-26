@@ -4,8 +4,8 @@ from typing import Optional, List, Tuple
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
-from database import Database, OHLCV
-from fetcher import DataFetcher
+from .database import Database, OHLCV
+from .fetcher import DataFetcher
 
 class DataBroker:
     def __init__(self):
