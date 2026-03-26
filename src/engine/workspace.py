@@ -7,9 +7,21 @@ from jinja2 import Environment, FileSystemLoader
 from .features.base import FEATURE_REGISTRY
 
 class WorkspaceManager:
-    """Manages the synchronization of strategy configuration with local workspace files."""
+    """Manages the synchronization of strategy configuration with local workspace files.
+
+    This class handles validating user configurations, updating the strategy's
+    manifest.json, and generating strictly-typed context.py and model.py files
+    using Jinja2 templates.
+    """
     
     def __init__(self, strategy_dir: str, template_dir: str = "src/engine/templates"):
+        """Initializes the WorkspaceManager.
+
+        Args:
+            strategy_dir (str): The directory path of the active strategy.
+            template_dir (str, optional): The directory path containing Jinja2 templates. 
+                Defaults to "src/engine/templates".
+        """
         self.strategy_dir = strategy_dir
         self.manifest_path = os.path.join(strategy_dir, "manifest.json")
         self.context_path = os.path.join(strategy_dir, "context.py")
@@ -23,7 +35,14 @@ class WorkspaceManager:
         )
 
     def _infer_type(self, value: Any) -> str:
-        """Maps JSON/Python runtime types to type hint strings."""
+        """Maps JSON/Python runtime types to type hint strings.
+
+        Args:
+            value (Any): The hyperparameter value to infer the type for.
+
+        Returns:
+            str: A string representing the Python type hint (e.g., 'int', 'float', 'str').
+        """
         if isinstance(value, bool): return "bool"
         if isinstance(value, int): return "int"
         if isinstance(value, float): return "float"
@@ -33,7 +52,20 @@ class WorkspaceManager:
         return "Any"
 
     def _build_features_payload(self, features_config: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-        """Generates the flat naming payload for features, handling multi-outputs."""
+        """Generates the flat naming payload for features, handling multi-outputs.
+
+        Filters out UI/Engine-specific parameters, standardizes the base attribute name,
+        and appends output suffixes for multi-output features to ensure a flat, 
+        collision-free namespace.
+
+        Args:
+            features_config (List[Dict[str, Any]]): The list of feature configurations 
+                from the strategy manifest.
+
+        Returns:
+            List[Dict[str, str]]: A list of dictionaries containing 'attr_name', 'col_name', 
+                and 'docstring' keys for rendering in the Jinja2 template.
+        """
         payload = []
         for config in features_config:
             fid = config.get("id")
@@ -76,14 +108,27 @@ class WorkspaceManager:
         return payload
 
     def sync(self, features: List[Dict[str, Any]], hparams: Dict[str, Any], bounds: Dict[str, Any]):
-        """Update manifest and generate synchronized context/model files using Jinja2."""
+        """Updates manifest and generates synchronized context/model files using Jinja2.
+
+        Validates hyperparameters against Python keywords, writes the updated 
+        configuration to manifest.json, constructs the template payload, and renders 
+        both context.py and model.py safely.
+
+        Args:
+            features (List[Dict[str, Any]]): List of feature configurations.
+            hparams (Dict[str, Any]): Dictionary of strategy hyperparameters.
+            bounds (Dict[str, Any]): Dictionary of parameter bounds for optimization.
+
+        Raises:
+            ValueError: If a hyperparameter key is a reserved Python keyword.
+        """
         
-        # 1. Validate Hyperparameters (Block Python Keywords)
+        # Validate Hyperparameters (Block Python Keywords)
         for key in hparams.keys():
             if keyword.iskeyword(key):
                 raise ValueError(f"Hyperparameter '{key}' is a reserved Python keyword and cannot be used.")
         
-        # 2. Update manifest.json
+        # Update manifest.json
         manifest = {}
         if os.path.exists(self.manifest_path):
             with open(self.manifest_path, 'r') as f:
@@ -96,7 +141,7 @@ class WorkspaceManager:
         with open(self.manifest_path, 'w') as f:
             json.dump(manifest, f, indent=4)
 
-        # 3. Build Jinja Context Payload
+        # Build Jinja Context Payload
         params_payload = [
             {"name": k, "type": self._infer_type(v), "value": repr(v)}
             for k, v in hparams.items()
@@ -107,14 +152,14 @@ class WorkspaceManager:
             "params": params_payload
         }
 
-        # 4. Render and Write context.py (Always Overwrite)
+        # Render and Write context.py (Always Overwrite)
         context_template = self.jinja_env.get_template("context.py.j2")
         rendered_context = context_template.render(**template_data)
         
         with open(self.context_path, 'w') as f:
             f.write(rendered_context)
 
-        # 5. Render and Write model.py (Only if it doesn't exist)
+        # Render and Write model.py (Only if it doesn't exist)
         if not os.path.exists(self.model_path):
             model_template = self.jinja_env.get_template("model.py.j2")
             rendered_model = model_template.render()
