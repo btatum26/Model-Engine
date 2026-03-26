@@ -24,10 +24,6 @@ class MACD(Feature):
         return "Oscillators (Momentum)"
 
     @property
-    def target_pane(self) -> str:
-        return "new"
-
-    @property
     def outputs(self) -> List[str]:
         return [None, "signal", "hist"]
 
@@ -37,9 +33,7 @@ class MACD(Feature):
             "fast_period": 12,
             "slow_period": 26,
             "signal_period": 9,
-            "normalize": "none",
-            "color_macd": "#00d4ff",
-            "color_signal": "#ff9900"
+            "normalize": "none"
         }
 
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
@@ -66,26 +60,9 @@ class MACD(Feature):
         signal_line = macd_line.ewm(span=signal, adjust=False).mean()
         histogram = macd_line - signal_line
         
-        def clean(s): return s.where(pd.notnull(s), None).tolist()
-        
         col_macd = self.generate_column_name("MACD", params)
         col_signal = self.generate_column_name("MACD", params, "signal")
         col_hist = self.generate_column_name("MACD", params, "hist")
-        
-        visuals = [
-            LineOutput(
-                name=col_macd,
-                data=clean(macd_line),
-                color=params.get("color_macd"),
-                width=2
-            ),
-            LineOutput(
-                name=col_signal,
-                data=clean(signal_line),
-                color=params.get("color_signal"),
-                width=1
-            )
-        ]
         
         # Normalize data
         final_macd = self.normalize(df, macd_line, norm_method)
@@ -98,4 +75,4 @@ class MACD(Feature):
             col_hist: final_hist
         }
         
-        return FeatureResult(visuals=visuals, data=data_dict)
+        return FeatureResult(data=data_dict)

@@ -82,7 +82,7 @@ def test_backtester_run(temp_strategy_dir):
     
     # Mock compute_all_features to avoid actually running feature logic
     with patch('src.engine.backtester.compute_all_features') as mock_compute:
-        mock_compute.return_value = (df, None, 0)
+        mock_compute.return_value = (df, 0)
         
         signals = backtester.run(df)
         
@@ -103,7 +103,7 @@ def test_backtester_grid_search(temp_strategy_dir):
     }, index=dates)
     
     with patch('src.engine.backtester.compute_all_features') as mock_compute:
-        mock_compute.return_value = (df, None, 0)
+        mock_compute.return_value = (df, 0)
         
         results = backtester.run_grid_search(df)
         

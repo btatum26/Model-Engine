@@ -1,6 +1,6 @@
 from typing import Dict, Any, List
 import pandas as pd
-from ..base import Feature, LineOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("ROC")
 class ROC(Feature):
@@ -17,21 +17,15 @@ class ROC(Feature):
         return "Oscillators (Momentum)"
 
     @property
-    def target_pane(self) -> str:
-        return "new"
-
-    @property
     def parameters(self) -> Dict[str, Any]:
         return {
             "period": 12,
-            "normalize": "none",
-            "color": "#00ffaa"
+            "normalize": "none"
         }
 
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         period = int(params.get("period", 12))
         norm_method = params.get("normalize", "none")
-        color = params.get("color", "#00ffaa")
         
         close = df['Close'] if 'Close' in df.columns else df['close']
         
@@ -39,20 +33,9 @@ class ROC(Feature):
         # ((Current Close - Close n periods ago) / Close n periods ago) * 100
         roc = close.pct_change(periods=period) * 100
         
-        def clean(s): return s.where(pd.notnull(s), None).tolist()
-        
         col_name = self.generate_column_name("ROC", params)
-        
-        visuals = [
-            LineOutput(
-                name=col_name,
-                data=clean(roc),
-                color=color,
-                width=2
-            )
-        ]
         
         # Apply systematic normalization
         final_data = self.normalize(df, roc, norm_method)
         
-        return FeatureResult(visuals=visuals, data={col_name: final_data})
+        return FeatureResult(data={col_name: final_data})

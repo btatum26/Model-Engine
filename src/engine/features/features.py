@@ -176,7 +176,6 @@ class FeatureOrchestrator:
             tuple:
                 - pd.DataFrame: A newly concatenated DataFrame containing the original 
                   OHLCV data alongside all newly computed feature columns.
-                - List[Any]: A flattened list of rendering instructions.
                 - int: The maximum lookback window discovered across all feature 
                   parameters, required for safe data truncation downstream.
 
@@ -228,7 +227,7 @@ class FeatureOrchestrator:
             new_features_df = pd.DataFrame(computed_features)
             df = pd.concat([df, new_features_df], axis=1)
             df = df.loc[:, ~df.columns.duplicated()]
-
+            
         return df, l_max
 
     def _raise_memory_violation(self, feature_id: str):

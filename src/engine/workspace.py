@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 from jinja2 import Environment, FileSystemLoader
 
 from .features.base import FEATURE_REGISTRY
+from src.exceptions import ValidationError
 
 class WorkspaceManager:
     """Manages the synchronization of strategy configuration with local workspace files.
@@ -78,8 +79,12 @@ class WorkspaceManager:
             outputs = feature_instance.outputs
             
             # Filter out UI/Engine parameters
-            core_params = {k: v for k, v in params.items() if k not in ["color", "normalize", "overbought", "oversold"] and not k.startswith("color_")}
+            core_params = {k: v for k, v in params.items() if k not in ["color", "normalize", "overbought", "oversold"] and not k.startswith("color_")} # This may not need to be here anymore, but it serves as a safeguard against non-core params affecting naming
             
+            # Strip redundant 'type' to match base.py exactly <-- Added this
+            if "type" in core_params and str(core_params["type"]).upper() == fid.upper():
+                del core_params["type"]
+                
             # Generate the Base Attribute Name
             if len(core_params) == 1 and ("period" in core_params or "window" in core_params):
                 val = core_params.get("period") or core_params.get("window")
@@ -126,7 +131,7 @@ class WorkspaceManager:
         # Validate Hyperparameters (Block Python Keywords)
         for key in hparams.keys():
             if keyword.iskeyword(key):
-                raise ValueError(f"Hyperparameter '{key}' is a reserved Python keyword and cannot be used.")
+                raise ValidationError(f"Hyperparameter '{key}' is a reserved Python keyword and cannot be used.")
         
         # Update manifest.json
         manifest = {}
