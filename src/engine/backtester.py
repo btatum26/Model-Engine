@@ -5,6 +5,7 @@ import os
 import pandas as pd
 import itertools
 from typing import List, Dict, Any, Optional, Tuple
+import numpy as np
 
 from .features.features import compute_all_features
 from src.logger import logger
@@ -159,9 +160,17 @@ class LocalBacktester:
             
             raw_signals = model.generate_signals(df_clean, context, hyperparams, artifacts)
             
-            # TODO: Pass raw_signals through SignalValidator for [-1.0, 1.0] compression
-            
-            return raw_signals
+            # Grab the compression mode from the user's manifest, default to 'clip'
+            comp_mode = self.manifest.get('compression_mode', 'clip')
+
+            # Squash it. If the user breaks the rules, this throws a StrategyError and halts the run safely.
+            clean_signals = SignalValidator.validate_and_compress(
+                raw_signals=raw_signals, 
+                target_index=df_clean.index, 
+                compression_mode=comp_mode
+            )
+
+            return clean_signals
             
         except Exception as e:
             logger.error(f"Backtest execution failed: {e}")
@@ -270,3 +279,102 @@ class LocalBacktester:
         except Exception as e:
             logger.error(f"Batch setup failed: {e}")
             raise StrategyError(f"Batch run failed: {e}")
+        
+        
+        
+class SignalValidator:
+    """
+    The final safety boundary before signals reach the execution or backtesting engine.
+    
+    This class coerces arbitrary user outputs into a strict, mathematically bounded 
+    Phase 3 Signal Array. It guarantees that the output is a pandas Series, exactly 
+    matches the input timeframe's index, contains no invalid data (NaN/Inf), and 
+    is strictly bounded between [-1.0, 1.0].
+    """
+
+    @staticmethod
+    def validate_and_compress(
+        raw_signals: Any, 
+        target_index: pd.Index, 
+        compression_mode: str = 'clip'
+    ) -> pd.Series:
+        """
+        Formats, aligns, and mathematically compresses arbitrary model predictions.
+
+        Args:
+            raw_signals (Any): The raw output from the user's `generate_signals()` method. 
+                Could be a list, numpy array, or pandas Series.
+            target_index (pd.Index): The exact datetime index of the DataFrame that 
+                was passed into the user's model. Used to ensure alignment.
+            compression_mode (str, optional): The mathematical method used to squash 
+                the signals into the [-1.0, 1.0] boundary. 
+                - 'clip': Hard boundary. Values > 1 become 1, values < -1 become -1.
+                - 'tanh': Soft squashing function. Best for unbounded regression outputs.
+                - 'probability': Maps a [0.0, 1.0] classifier probability to [-1.0, 1.0].
+                Defaults to 'clip'.
+
+        Returns:
+            pd.Series: A perfectly aligned series bounded between [-1.0, 1.0], with 
+                0.0 indicating "no conviction / flat".
+
+        Raises:
+            StrategyError: If the output cannot be coerced into a numerical Series.
+
+        Example:
+            >>> raw = model.generate_signals(df)
+            >>> clean_signals = SignalValidator.validate_and_compress(raw, df.index, 'tanh')
+        """
+        # 1. Type Coercion
+        try:
+            if not isinstance(raw_signals, pd.Series):
+                signals = pd.Series(raw_signals)
+            else:
+                signals = raw_signals.copy()
+        except Exception as e:
+            logger.error(f"Could not convert raw signals to pandas Series: {e}")
+            raise StrategyError("User model must return a list, numpy array, or pandas Series.")
+
+        # 2. Convert types to float, coercing strings/garbage to NaN
+        signals = pd.to_numeric(signals, errors='coerce')
+
+        # 3. Index Alignment
+        if len(signals) == len(target_index) and signals.index.equals(target_index):
+            pass # Perfectly aligned already
+        elif len(signals) == len(target_index):
+            # Same length, wrong index (user returned a list or numpy array)
+            signals.index = target_index
+            logger.debug("Forced target index onto user signals.")
+        else:
+            # User dropped rows or messed up the shape. 
+            logger.warning(f"Signal length ({len(signals)}) does not match input length ({len(target_index)}). Attempting to reindex.")
+            # If they provided a proper index, we map it. If not, this will likely fail or fill with NaNs.
+            try:
+                signals = signals.reindex(target_index)
+            except Exception as e:
+                raise StrategyError(f"Critical index mismatch. Cannot align signals to input data. {e}")
+
+        # 4. Handle Inf and NaN before math operations
+        signals = signals.replace([np.inf, -np.inf], np.nan)
+        signals = signals.fillna(0.0) # NaN implies no conviction (0 weight)
+
+        # 5. Mathematical Compression to [-1.0, 1.0]
+        if compression_mode == 'clip':
+            signals = signals.clip(lower=-1.0, upper=1.0)
+            
+        elif compression_mode == 'tanh':
+            # Great for raw expected returns (e.g., passing 0.05 return through tanh)
+            # You might need a scalar multiplier here depending on asset volatility
+            signals = np.tanh(signals)
+            
+        elif compression_mode == 'probability':
+            # Maps XGBoost binary probabilities [0, 1] to [-1, 1]
+            # 0.5 becomes 0.0 (neutral). 1.0 becomes 1.0 (long). 0.0 becomes -1.0 (short).
+            signals = (signals * 2) - 1.0
+            
+        else:
+            logger.warning(f"Unknown compression mode '{compression_mode}'. Defaulting to 'clip'.")
+            signals = signals.clip(lower=-1.0, upper=1.0)
+
+        # Final safety check
+        signals.name = "conviction_signal"
+        return signals

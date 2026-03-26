@@ -45,11 +45,11 @@ def test_nan_audit_trigger(mock_warning, dummy_strategy):
     
     backtester._audit_nans(df_with_nans, ["feature_1"])
     
-    mock_warning.assert_called_once_with("Feature 'feature_1' has 1 NaN values.")
+    mock_warning.assert_called_once_with("Feature 'feature_1' has 1 unexpected NaN values after l_max purge.")
 
 @patch("src.engine.backtester.compute_all_features")
 def test_single_run_output_shape(mock_compute, dummy_strategy):
-    mock_compute.return_value = (pd.DataFrame(index=range(4)), [], [])
+    mock_compute.return_value = (pd.DataFrame(index=range(4)), [], 0)
     
     backtester = LocalBacktester(dummy_strategy)
     df = pd.DataFrame(index=range(4))
@@ -64,18 +64,18 @@ def test_single_run_output_shape(mock_compute, dummy_strategy):
 def test_single_run_deterministic_values(mock_compute, dummy_strategy):
     # Dummy strategy should output [1.0, -1.0, 1.0, -1.0] for length 4
     df = pd.DataFrame(index=range(4))
-    mock_compute.return_value = (df, [], [])
+    mock_compute.return_value = (df, [], 0)
     
     backtester = LocalBacktester(dummy_strategy)
     output = backtester.run(df)
     
-    expected = pd.Series([1.0, -1.0, 1.0, -1.0], index=df.index, name="signal")
+    expected = pd.Series([1.0, -1.0, 1.0, -1.0], index=df.index, name="conviction_signal")
     pd.testing.assert_series_equal(output, expected)
 
 @patch("src.engine.backtester.compute_all_features")
 def test_grid_search_permutation_count(mock_compute, dummy_strategy):
     df = pd.DataFrame(index=range(4))
-    mock_compute.return_value = (df, [], [])
+    mock_compute.return_value = (df, [], 0)
     
     backtester = LocalBacktester(dummy_strategy)
     
@@ -88,7 +88,7 @@ def test_grid_search_permutation_count(mock_compute, dummy_strategy):
 @patch("src.engine.backtester.compute_all_features")
 def test_grid_search_naming_convention(mock_compute, dummy_strategy):
     df = pd.DataFrame(index=range(4))
-    mock_compute.return_value = (df, [], [])
+    mock_compute.return_value = (df, [], 0)
     
     backtester = LocalBacktester(dummy_strategy)
     bounds = {"window": [10], "threshold": [0.1]}
