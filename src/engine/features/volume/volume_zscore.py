@@ -1,6 +1,6 @@
 from typing import Dict, Any, List
 import pandas as pd
-from ..base import Feature, LineOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("VolumeZScore")
 class VolumeZScore(Feature):
@@ -17,19 +17,13 @@ class VolumeZScore(Feature):
         return "Volume Indicators"
 
     @property
-    def target_pane(self) -> str:
-        return "new"
-
-    @property
     def parameters(self) -> Dict[str, Any]:
         return {
-            "period": 20,
-            "color": "#ffaa00"
+            "period": 20
         }
 
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         period = int(params.get("period", 20))
-        color = params.get("color", "#ffaa00")
         
         volume = df['Volume'] if 'Volume' in df.columns else df['volume']
         
@@ -37,17 +31,6 @@ class VolumeZScore(Feature):
         # Here we do it manually to ensure we are using Volume
         z_score = self.normalize(df, volume, "z_score")
         
-        def clean(s): return s.where(pd.notnull(s), None).tolist()
-        
         col_name = self.generate_column_name("VolumeZScore", params)
         
-        visuals = [
-            LineOutput(
-                name=col_name,
-                data=clean(z_score),
-                color=color,
-                width=2
-            )
-        ]
-        
-        return FeatureResult(visuals=visuals, data={col_name: z_score})
+        return FeatureResult(data={col_name: z_score})

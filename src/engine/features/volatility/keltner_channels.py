@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
-from ..base import Feature, LineOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("KeltnerChannels")
 class KeltnerChannels(Feature):
@@ -23,9 +23,7 @@ class KeltnerChannels(Feature):
             "ema_period": 20,
             "atr_period": 10,
             "multiplier": 2.0,
-            "normalize": "none",
-            "color_center": "#ffffff",
-            "color_bands": "#ffaa00"
+            "normalize": "none"
         }
 
     @property
@@ -64,27 +62,6 @@ class KeltnerChannels(Feature):
         col_center = self.generate_column_name("KeltnerChannels", params, "center")
         col_lower = self.generate_column_name("KeltnerChannels", params, "lower")
 
-        visuals = [
-            LineOutput(
-                name=col_upper, 
-                data=upper_band.where(pd.notnull(upper_band), None).tolist(), 
-                color=params.get("color_bands"), 
-                width=1
-            ),
-            LineOutput(
-                name=col_center, 
-                data=center_line.where(pd.notnull(center_line), None).tolist(), 
-                color=params.get("color_center"), 
-                width=1
-            ),
-            LineOutput(
-                name=col_lower, 
-                data=lower_band.where(pd.notnull(lower_band), None).tolist(), 
-                color=params.get("color_bands"), 
-                width=1
-            )
-        ]
-        
         # Apply normalization to the center line and bands
         final_center = self.normalize(df, center_line, norm_method)
         final_upper = self.normalize(df, upper_band, norm_method)
@@ -96,4 +73,4 @@ class KeltnerChannels(Feature):
             col_lower: final_lower
         }
         
-        return FeatureResult(visuals=visuals, data=data_dict)
+        return FeatureResult(data=data_dict)

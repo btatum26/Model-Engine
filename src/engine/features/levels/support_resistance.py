@@ -13,7 +13,7 @@ class SupportResistance(Feature):
 
     @property
     def description(self) -> str:
-        return "Rolling ML-Safe Pivot Tracker & GUI Visual Clusters."
+        return "Rolling ML-Safe Pivot Tracker."
 
     @property
     def category(self) -> str:
@@ -43,8 +43,6 @@ class SupportResistance(Feature):
         method = params.get("method", "Bill Williams")
         threshold = float(params.get("threshold_pct", 0.015))
         window = int(params.get("window", 3))
-        cluster_thresh = float(params.get("clustering_pct", 0.02))
-        min_str = float(params.get("min_strength", 1.0))
 
         # Extract price pivots based on the selected method
         pivots = []

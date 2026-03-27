@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
-from ..base import Feature, LineOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("OBV")
 class OBV(Feature):
@@ -18,14 +18,9 @@ class OBV(Feature):
         return "Volume & Profile"
 
     @property
-    def target_pane(self) -> str:
-        return "new"
-
-    @property
     def parameters(self) -> Dict[str, Any]:
         return {
-            "normalize": "none",
-            "color": "#00aaff"
+            "normalize": "none"
         }
 
     @property
@@ -34,7 +29,6 @@ class OBV(Feature):
 
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         norm_method = params.get("normalize", "none")
-        color = params.get("color", "#00aaff")
         
         close = df['Close'] if 'Close' in df.columns else df['close']
         volume = df['Volume'] if 'Volume' in df.columns else df['volume']
@@ -55,15 +49,6 @@ class OBV(Feature):
         
         col_name = self.generate_column_name("OBV", params)
         col_sma = self.generate_column_name("OBV", params, "sma_20")
-
-        visuals = [
-            LineOutput(
-                name=col_name,
-                data=obv.where(pd.notnull(obv), None).tolist(),
-                color=color,
-                width=2
-            )
-        ]
         
         # Return primary and smoothed OBV data
         data_dict = {
@@ -71,4 +56,4 @@ class OBV(Feature):
             col_sma: final_obv_sma
         }
         
-        return FeatureResult(visuals=visuals, data=data_dict)
+        return FeatureResult(data=data_dict)

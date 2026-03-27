@@ -1,6 +1,6 @@
 from typing import Dict, Any, List
 import pandas as pd
-from ..base import Feature, FeatureOutput, LineOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("BollingerBands")
 class BollingerBands(Feature):
@@ -17,17 +17,11 @@ class BollingerBands(Feature):
         return "Volatility"
 
     @property
-    def target_pane(self) -> str:
-        return "main"
-
-    @property
     def parameters(self) -> Dict[str, Any]:
         return {
             "period": 20,
             "std_dev": 2.0,
-            "normalize": "none",
-            "color_bands": "#00d4ff",
-            "color_mid": "#ffffff"
+            "normalize": "none"
         }
 
     @property
@@ -57,34 +51,10 @@ class BollingerBands(Feature):
         # Useful for identifying "squeezes"
         width = (upper_band - lower_band) / mid_band.replace(0, 1e-9)
         
-        # Prepare visuals for GUI (always raw prices)
-        def clean(s): return s.where(pd.notnull(s), None).tolist()
-        
         col_upper = self.generate_column_name("BollingerBands", params, "upper")
         col_mid = self.generate_column_name("BollingerBands", params, "mid")
         col_lower = self.generate_column_name("BollingerBands", params, "lower")
         col_width = self.generate_column_name("BollingerBands", params, "width")
-        
-        visuals = [
-            LineOutput(
-                name=col_upper, 
-                data=clean(upper_band), 
-                color=params.get("color_bands"), 
-                width=1
-            ),
-            LineOutput(
-                name=col_mid, 
-                data=clean(mid_band), 
-                color=params.get("color_mid"), 
-                width=1
-            ),
-            LineOutput(
-                name=col_lower, 
-                data=clean(lower_band), 
-                color=params.get("color_bands"), 
-                width=1
-            )
-        ]
         
         # Normalize data based on strategy request
         norm_upper = self.normalize(df, upper_band, norm_method)
@@ -99,4 +69,4 @@ class BollingerBands(Feature):
             col_width: norm_width
         }
         
-        return FeatureResult(visuals=visuals, data=data_dict)
+        return FeatureResult(data=data_dict)

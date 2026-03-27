@@ -1,17 +1,25 @@
-# Auto-generated context mapping feature IDs to DataFrame column names.
+# AUTO-GENERATED FILE. DO NOT MODIFY DIRECTLY.
+from dataclasses import dataclass, field
 
+@dataclass(frozen=True)
+class FeaturesContext:
+    """Strictly typed mapping of strategy features to DataFrame columns."""
+    RSI_close_14: str = 'RSI_close_14'
+    """
+    Feature: RSI
+        Outputs: Primary
+        Params: {'window': 14, 'source': 'close'}
+    """
+
+@dataclass(frozen=True)
+class ParamsContext:
+    """Strictly typed strategy hyperparameters defined in manifest.json."""
+    oversold: float = 30.0
+    overbought: float = 70.0
+    divergence_lookback: float = 20.0
+
+@dataclass(frozen=True)
 class Context:
-    def __init__(self):
-        self.RSI_BASE = 'RSI_Divergence_Features_5_14_RSI_BASE'
-        self.IS_FRACTAL_HIGH_CONFIRMED = 'RSI_Divergence_Features_5_14_IS_FRACTAL_HIGH_CONFIRMED'
-        self.IS_FRACTAL_LOW_CONFIRMED = 'RSI_Divergence_Features_5_14_IS_FRACTAL_LOW_CONFIRMED'
-        self.CURRENT_CONFIRMED_HIGH_PRICE = 'RSI_Divergence_Features_5_14_CURRENT_CONFIRMED_HIGH_PRICE'
-        self.CURRENT_CONFIRMED_HIGH_RSI = 'RSI_Divergence_Features_5_14_CURRENT_CONFIRMED_HIGH_RSI'
-        self.CURRENT_CONFIRMED_LOW_PRICE = 'RSI_Divergence_Features_5_14_CURRENT_CONFIRMED_LOW_PRICE'
-        self.CURRENT_CONFIRMED_LOW_RSI = 'RSI_Divergence_Features_5_14_CURRENT_CONFIRMED_LOW_RSI'
-        self.PREVIOUS_HIGH_PRICE = 'RSI_Divergence_Features_5_14_PREVIOUS_HIGH_PRICE'
-        self.PREVIOUS_HIGH_RSI = 'RSI_Divergence_Features_5_14_PREVIOUS_HIGH_RSI'
-        self.PREVIOUS_LOW_PRICE = 'RSI_Divergence_Features_5_14_PREVIOUS_LOW_PRICE'
-        self.PREVIOUS_LOW_RSI = 'RSI_Divergence_Features_5_14_PREVIOUS_LOW_RSI'
-        self.BARS_SINCE_PREVIOUS_HIGH = 'RSI_Divergence_Features_5_14_BARS_SINCE_PREVIOUS_HIGH'
-        self.BARS_SINCE_PREVIOUS_LOW = 'RSI_Divergence_Features_5_14_BARS_SINCE_PREVIOUS_LOW'
+    """Master strategy context object."""
+    features: FeaturesContext = field(default_factory=FeaturesContext)
+    params: ParamsContext = field(default_factory=ParamsContext)

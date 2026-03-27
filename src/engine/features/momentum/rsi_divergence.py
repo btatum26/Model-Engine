@@ -132,7 +132,7 @@ class RSIDivergenceFeatures(Feature):
         # Lows counter
         low_conf_indices = np.where(is_fractal_low_confirmed)[0]
         last_low_idx = pd.Series(np.nan, index=df.index)
-        last_low_idx.iloc[low_conf_indices] = low_conf_indices
+        last_low_idx.iloc[low_conf_indices] = last_low_idx
         last_low_idx = last_low_idx.ffill().shift(1)
         bars_since_previous_low = full_indices - last_low_idx
 
@@ -153,22 +153,4 @@ class RSIDivergenceFeatures(Feature):
             self.generate_column_name("RSI_Divergence_Features", params, "Bars_Since_Previous_Low"): bars_since_previous_low
         }
 
-        # Visuals
-        visuals = [
-            MarkerOutput(
-                name="Fractal High Confirmation",
-                indices=high_conf_indices.tolist(),
-                values=high.iloc[high_conf_indices].tolist(),
-                color="#ff0000",
-                shape="t"
-            ),
-            MarkerOutput(
-                name="Fractal Low Confirmation",
-                indices=low_conf_indices.tolist(),
-                values=low.iloc[low_conf_indices].tolist(),
-                color="#00ff00",
-                shape="v"
-            )
-        ]
-
-        return FeatureResult(visuals=visuals, data=data)
+        return FeatureResult(data=data)

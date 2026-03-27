@@ -1,0 +1,48 @@
+{
+    "features": [
+        {
+            "id": "SMA",
+            "params": {
+                "period": 50,
+                "source": "close"
+            }
+        },
+        {
+            "id": "RSI",
+            "params": {
+                "window": 14,
+                "source": "close"
+            }
+        },
+        {
+            "id": "MACD",
+            "params": {
+                "fast_period": 12,
+                "slow_period": 26,
+                "signal_period": 9,
+                "source": "close"
+            }
+        },
+        {
+            "id": "RSI",
+            "params": {
+                "window": 21,
+                "source": "close"
+            }
+        }
+    ],
+    "hyperparameters": {
+        "stop_loss": 0.05,
+        "take_profit": 0.1
+    },
+    "parameter_bounds": {
+        "stop_loss": [
+            0.01,
+            0.1
+        ],
+        "take_profit": [
+            0.05,
+            0.2
+        ]
+    }
+}

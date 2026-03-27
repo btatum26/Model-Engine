@@ -1,6 +1,6 @@
 from typing import Dict, Any, List
 import pandas as pd
-from ..base import Feature, LineOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("Stochastic")
 class Stochastic(Feature):
@@ -17,25 +17,11 @@ class Stochastic(Feature):
         return "Oscillators (Momentum)"
 
     @property
-    def target_pane(self) -> str:
-        return "new"
-
-    @property
-    def y_range(self) -> List[float]:
-        return [0, 100]
-
-    @property
-    def y_padding(self) -> float:
-        return 0.05
-
-    @property
     def parameters(self) -> Dict[str, Any]:
         return {
             "k_period": 14,
             "d_period": 3,
-            "normalize": "none",
-            "color_k": "#00ffff",
-            "color_d": "#ff00ff"
+            "normalize": "none"
         }
 
     @property
@@ -63,24 +49,9 @@ class Stochastic(Feature):
         
         col_k = self.generate_column_name("Stochastic", params, "k")
         col_d = self.generate_column_name("Stochastic", params, "d")
-
-        visuals = [
-            LineOutput(
-                name=col_k, 
-                data=k_percent.where(pd.notnull(k_percent), None).tolist(), 
-                color=params.get("color_k"), 
-                width=1
-            ),
-            LineOutput(
-                name=col_d, 
-                data=d_percent.where(pd.notnull(d_percent), None).tolist(), 
-                color=params.get("color_d"), 
-                width=1
-            )
-        ]
         
         # Apply systematic normalization
         final_k = self.normalize(df, k_percent, norm_method)
         final_d = self.normalize(df, d_percent, norm_method)
         
-        return FeatureResult(visuals=visuals, data={col_k: final_k, col_d: final_d})
+        return FeatureResult(data={col_k: final_k, col_d: final_d})

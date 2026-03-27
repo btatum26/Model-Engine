@@ -1,6 +1,6 @@
 from typing import Dict, Any
 import pandas as pd
-from ..base import Feature, LineOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("AnchoredVWAP")
 class AnchoredVWAP(Feature):
@@ -20,13 +20,11 @@ class AnchoredVWAP(Feature):
     def parameters(self) -> Dict[str, Any]:
         return {
             "anchor_bars_back": 100,
-            "normalize": "none",
-            "color": "#00d8ff"
+            "normalize": "none"
         }
 
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         bars_back = int(params.get("anchor_bars_back", 100))
-        color = params.get("color", "#00d8ff")
         norm_method = params.get("normalize", "none")
         
         # Determine the starting index for the anchored calculation
@@ -57,17 +55,8 @@ class AnchoredVWAP(Feature):
         vwap_series = pd.Series(index=df.index, dtype=float)
         vwap_series.iloc[start_idx:] = vwap_slice
         
-        visuals = [
-            LineOutput(
-                name=self.generate_column_name("AnchoredVWAP", params),
-                data=vwap_series.where(pd.notnull(vwap_series), None).tolist(),
-                color=color,
-                width=2
-            )
-        ]
-        
         # Apply normalization for machine learning features
         final_data = self.normalize(df, vwap_series, norm_method)
         
         col_name = self.generate_column_name("AnchoredVWAP", params)
-        return FeatureResult(visuals=visuals, data={col_name: final_data})
+        return FeatureResult(data={col_name: final_data})

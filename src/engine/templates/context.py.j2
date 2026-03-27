@@ -4,25 +4,23 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class FeaturesContext:
     """Strictly typed mapping of strategy features to DataFrame columns."""
-{%- for f in features %}
+{% for f in features %}
     {{ f.attr_name }}: str = '{{ f.col_name }}'
     """
     {{ f.docstring | indent(4) }}
     """
-{%- endfor %}
-{% if not features %}
+{% else %}
     pass
-{% endif %}
+{% endfor %}
 
 @dataclass(frozen=True)
 class ParamsContext:
     """Strictly typed strategy hyperparameters defined in manifest.json."""
-{%- for p in params %}
+{% for p in params %}
     {{ p.name }}: {{ p.type }} = {{ p.value }}
-{%- endfor %}
-{% if not params %}
+{% else %}
     pass
-{% endif %}
+{% endfor %}
 
 @dataclass(frozen=True)
 class Context:

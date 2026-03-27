@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
 import pandas as pd
 import numpy as np
-from ..base import Feature, LineOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("ADX")
 class ADX(Feature):
@@ -18,17 +18,10 @@ class ADX(Feature):
         return "Trend Indicators"
 
     @property
-    def target_pane(self) -> str:
-        return "new"
-
-    @property
     def parameters(self) -> Dict[str, Any]:
         return {
             "period": 14,
-            "normalize": "none",
-            "color_adx": "#ffffff",
-            "color_plus_di": "#44ff44",
-            "color_minus_di": "#ff4444"
+            "normalize": "none"
         }
 
     @property
@@ -70,17 +63,9 @@ class ADX(Feature):
         dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, 1e-9)
         adx = dx.ewm(alpha=1/period, adjust=False).mean()
         
-        def clean(s): return s.where(pd.notnull(s), None).tolist()
-        
         col_adx = self.generate_column_name("ADX", params)
         col_plus = self.generate_column_name("ADX", params, "plus_di")
         col_minus = self.generate_column_name("ADX", params, "minus_di")
-        
-        visuals = [
-            LineOutput(name=col_adx, data=clean(adx), color=params.get("color_adx"), width=2),
-            LineOutput(name=col_plus, data=clean(plus_di), color=params.get("color_plus_di"), width=1),
-            LineOutput(name=col_minus, data=clean(minus_di), color=params.get("color_minus_di"), width=1)
-        ]
         
         # Apply systematic normalization
         final_adx = self.normalize(df, adx, norm_method)
@@ -93,4 +78,4 @@ class ADX(Feature):
             col_minus: final_minus
         }
         
-        return FeatureResult(visuals=visuals, data=data_dict)
+        return FeatureResult(data=data_dict)

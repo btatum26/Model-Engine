@@ -1,6 +1,6 @@
 from typing import Dict, Any
 import pandas as pd
-from ..base import Feature, LineOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("VWAP")
 class VWAP(Feature):
@@ -19,13 +19,11 @@ class VWAP(Feature):
     @property
     def parameters(self) -> Dict[str, Any]:
         return {
-            "normalize": "none",
-            "color": "#00d8ff"
+            "normalize": "none"
         }
 
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         norm_method = params.get("normalize", "none")
-        color = params.get("color", "#00d8ff")
         
         high = df['High'] if 'High' in df.columns else df['high']
         low = df['Low'] if 'Low' in df.columns else df['low']
@@ -40,17 +38,8 @@ class VWAP(Feature):
         cum_v = volume.groupby(dates).cumsum()
         vwap = cum_v_tp / cum_v
         
-        visuals = [
-            LineOutput(
-                name=self.generate_column_name("VWAP", params), 
-                data=vwap.where(pd.notnull(vwap), None).tolist(), 
-                color=color, 
-                width=2
-            )
-        ]
-        
         # Apply systematic normalization
         final_data = self.normalize(df, vwap, norm_method)
         
         col_name = self.generate_column_name("VWAP", params)
-        return FeatureResult(visuals=visuals, data={col_name: final_data})
+        return FeatureResult(data={col_name: final_data})

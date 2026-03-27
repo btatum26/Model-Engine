@@ -6,7 +6,9 @@ from jinja2 import Environment, FileSystemLoader
 
 from .features.base import FEATURE_REGISTRY
 from src.exceptions import ValidationError
+from .features.features import load_features
 
+load_features()  # Ensure all features are registered before any workspace operations
 class WorkspaceManager:
     """Manages the synchronization of strategy configuration with local workspace files.
 

@@ -1,7 +1,7 @@
 from typing import Dict, Any
 import pandas as pd
 import numpy as np
-from ..base import Feature, LineOutput, FeatureResult, register_feature
+from ..base import Feature, FeatureResult, register_feature
 
 @register_feature("AverageTrueRange")
 @register_feature("ATR")
@@ -19,21 +19,15 @@ class AverageTrueRange(Feature):
         return "Volatility"
 
     @property
-    def target_pane(self) -> str: 
-        return "new"
-
-    @property
     def parameters(self) -> Dict[str, Any]:
         return {
             "period": 14,
-            "normalize": "none",
-            "color": "#ff0000"
+            "normalize": "none"
         }
 
     def compute(self, df: pd.DataFrame, params: Dict[str, Any], cache: Any = None) -> FeatureResult:
         period = int(params.get("period", 14))
         norm_method = params.get("normalize", "none")
-        color = params.get("color", "#ff0000")
         
         high = df['High'] if 'High' in df.columns else df['high']
         low = df['Low'] if 'Low' in df.columns else df['low']
@@ -52,17 +46,8 @@ class AverageTrueRange(Feature):
         # ATR is the simple moving average of True Range
         atr = tr.rolling(window=period).mean()
 
-        visuals = [
-            LineOutput(
-                name=self.generate_column_name("ATR", params), 
-                data=atr.where(pd.notnull(atr), None).tolist(), 
-                color=color, 
-                width=2
-            )
-        ]
-
         # Apply systematic normalization
         final_data = self.normalize(df, atr, norm_method)
 
         col_name = self.generate_column_name("ATR", params)
-        return FeatureResult(visuals=visuals, data={col_name: final_data})
+        return FeatureResult(data={col_name: final_data})

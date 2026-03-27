@@ -12,7 +12,7 @@ from src.engine.backtester import LocalBacktester
 from src.engine.bundler import Bundler
 
 # 1. Setup Strategy Workspace
-STRAT_DIR = "src/strategies/momentum_surge"
+STRAT_DIR = "src/strategies/test_strategy"
 
 # The updated strategy logic utilizing SMA, RSI, and MACD Histogram
 MODEL_PY_CONTENT = """
@@ -20,27 +20,27 @@ import numpy as np
 import pandas as pd
 from src.engine.controller import SignalModel
 
-class MomentumSurge(SignalModel):
+class TestStrategy(SignalModel):
     def train(self, df, context, params):
         return {}
 
-    def generate_signals(self, df, context, params, artifacts):
-        rsi_val = df[context.RSI]
-        sma_val = df[context.SMA]
-        macd_hist = df[context.MACD_HIST]
+    def generate_signals(self, df, context, artifacts=None):
+        rsi_val = df[context.features.RSI_close_14]
+        sma_val = df[context.features.SMA_50_close]
+        macd_hist = df[context.features.MACD_12_9_26_close_HIST]
         
         # Standardize on 'close' (handling potential capitalization differences)
         close_price = df['close'] if 'close' in df.columns else df['Close']
         
         condition_long = (
             (close_price > sma_val) & 
-            (rsi_val < params['rsi_upper']) & 
+            (rsi_val < 70) & 
             (macd_hist > 0.0)
         )
         
         condition_short = (
             (close_price < sma_val) & 
-            (rsi_val > params['rsi_lower']) & 
+            (rsi_val > 30) & 
             (macd_hist < 0.0)
         )
         
@@ -57,19 +57,21 @@ def test_full_flow():
     print("--- 1. Syncing Workspace ---")
     wm = WorkspaceManager(STRAT_DIR)
     
-    # Corrected parameters based on macd.py source code
+    # Corrected parameters based on test_strategy manifest
     features = [
-        {"id": "SMA", "params": {"period": 50}},
-        {"id": "RSI", "params": {"period": 14}},
+        {"id": "SMA", "params": {"period": 50, "source": "close"}},
+        {"id": "RSI", "params": {"window": 14, "source": "close"}},
         {"id": "MACD", "params": {
             "fast_period": 12, 
             "slow_period": 26, 
-            "signal_period": 9
-        }}
+            "signal_period": 9,
+            "source": "close"
+        }},
+        {"id": "RSI", "params": {"window": 21, "source": "close"}}
     ]
     
-    hyperparams = {"rsi_lower": 30, "rsi_upper": 70}
-    parameter_bounds = {"rsi_lower": [20, 40], "rsi_upper": [60, 80]}
+    hyperparams = {"stop_loss": 0.05, "take_profit": 0.1}
+    parameter_bounds = {"stop_loss": [0.01, 0.1], "take_profit": [0.05, 0.2]}
     
     # This triggers your auto-generator for context.py and writes manifest.json
     wm.sync(features, hyperparams, parameter_bounds)
@@ -81,11 +83,23 @@ def test_full_flow():
     # We will manually overwrite context.py here just for the test environment
     # to guarantee the mappings match our model.py logic before your auto-generator kicks in.
     context_content = """
+from dataclasses import dataclass, field
+
+@dataclass(frozen=True)
+class FeaturesContext:
+    SMA_50_close: str = 'SMA_50_close'
+    RSI_close_14: str = 'RSI_close_14'
+    MACD_12_9_26_close_HIST: str = 'MACD_12_9_26_close_HIST'
+
+@dataclass(frozen=True)
+class ParamsContext:
+    stop_loss: float = 0.05
+    take_profit: float = 0.1
+
+@dataclass(frozen=True)
 class Context:
-    def __init__(self):
-        self.SMA = 'SMA_50'
-        self.RSI = 'RSI_14'
-        self.MACD_HIST = 'MACD_hist_12_26_9'  # Based on macd.py string generation
+    features: FeaturesContext = field(default_factory=FeaturesContext)
+    params: ParamsContext = field(default_factory=ParamsContext)
 """
     with open(wm.context_path, 'w') as f:
         f.write(context_content)
@@ -96,8 +110,6 @@ class Context:
     print("\n--- 2. Running Local Backtest ---")
     
     # Mock Data Setup
-    # Note: To prevent KeyError in a pure mock environment, we ensure the 
-    # expected feature columns are mocked alongside OHLCV.
     dates = pd.date_range('2023-01-01', periods=200, freq='D')
     df = pd.DataFrame({
         'Open': np.random.uniform(100, 150, 200),
@@ -106,10 +118,11 @@ class Context:
         'Close': np.random.uniform(100, 150, 200),
         'Volume': np.random.uniform(1000, 5000, 200),
         # Mocking the features that the LocalBacktester/Context expects
-        'SMA_50': np.random.uniform(100, 150, 200),
-        'RSI_14': np.random.uniform(10, 90, 200),
-        'MACD_hist_12_26_9': np.random.uniform(-2, 2, 200)
+        'SMA_50_close': np.random.uniform(100, 150, 200),
+        'RSI_close_14': np.random.uniform(10, 90, 200),
+        'MACD_12_9_26_close_HIST': np.random.uniform(-2, 2, 200)
     }, index=dates)
+
     
     backtester = LocalBacktester(STRAT_DIR)
     

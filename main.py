@@ -2,14 +2,91 @@ import argparse
 import sys
 import os
 import subprocess
+import json
+from datetime import datetime, timedelta
 import pandas as pd
+
 from src.engine.controller import ApplicationController, JobPayload, ExecutionMode
+from src.engine.workspace import WorkspaceManager
 from src.logger import logger
 from src.exceptions import EngineError
 
+def handle_init(strategy_name: str, strategies_dir: str = "src/strategies"):
+    """Scaffolds a new strategy directory with default boilerplate."""
+    strat_dir = os.path.join(strategies_dir, strategy_name)
+    
+    if os.path.exists(strat_dir):
+        logger.error(f"Strategy '{strategy_name}' already exists at {strat_dir}")
+        sys.exit(1)
+        
+    try:
+        os.makedirs(strat_dir)
+        
+        # Define a bare-bones default configuration
+        default_features = [
+            {"id": "sma", "params": {"period": 50, "source": "close"}},
+            {"id": "rsi", "params": {"window": 14, "source": "close"}}
+        ]
+        default_hparams = {"stop_loss": 0.05, "take_profit": 0.10}
+        default_bounds = {"stop_loss": [0.01, 0.1]}
+        
+        # Bootstrap files via WorkspaceManager
+        wm = WorkspaceManager(strategy_dir=strat_dir)
+        wm.sync(features=default_features, hparams=default_hparams, bounds=default_bounds)
+        
+        print(f"\n[+] Successfully initialized strategy: '{strategy_name}'")
+        print(f"    Location: {strat_dir}")
+        print("\nNext Steps:")
+        print("  1. Edit manifest.json to configure your features and parameters.")
+        print(f"  2. Run `python main.py SYNC --strategy {strategy_name}` to update your context.")
+        print("  3. Write your trading logic in model.py.")
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize strategy: {e}")
+        if os.path.exists(strat_dir):
+            import shutil
+            shutil.rmtree(strat_dir)
+        sys.exit(1)
+
+
+def handle_sync(strategy_name: str, strategies_dir: str = "src/strategies"):
+    """Recompiles context.py and model.py from the existing manifest.json."""
+    strat_dir = os.path.join(strategies_dir, strategy_name)
+    manifest_path = os.path.join(strat_dir, "manifest.json")
+    
+    if not os.path.exists(strat_dir):
+        logger.error(f"Strategy '{strategy_name}' does not exist. Run INIT first.")
+        sys.exit(1)
+        
+    if not os.path.exists(manifest_path):
+        logger.error(f"manifest.json not found in {strat_dir}.")
+        sys.exit(1)
+        
+    try:
+        with open(manifest_path, 'r') as f:
+            manifest = json.load(f)
+            
+        features = manifest.get("features", [])
+        hparams = manifest.get("hyperparameters", {})
+        bounds = manifest.get("parameter_bounds", {})
+        
+        wm = WorkspaceManager(strategy_dir=strat_dir)
+        wm.sync(features=features, hparams=hparams, bounds=bounds)
+        
+        print(f"\n[+] Successfully synced workspace for '{strategy_name}'")
+        print("    context.py has been updated with your latest manifest configurations.")
+        
+    except json.JSONDecodeError:
+        logger.error(f"Invalid JSON in {manifest_path}. Please fix formatting errors.")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Failed to sync strategy workspace: {e}")
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Research Engine CLI")
-    parser.add_argument("mode", nargs="?", choices=["BACKTEST", "TRAIN", "SIGNAL"], help="Execution mode")
+    parser.add_argument("mode", nargs="?", choices=["BACKTEST", "TRAIN", "SIGNAL", "INIT", "SYNC"], help="Execution mode")
     parser.add_argument("--strategy", help="Strategy folder name")
     parser.add_argument("--ticker", help="Ticker symbol (e.g., AAPL)")
     parser.add_argument("--interval", default="1h", help="Data interval (e.g., 1h, 1d)")
@@ -29,12 +106,42 @@ def main():
         parser.print_help()
         return
 
-    # Ensure required arguments are present for CLI modes
+    # --- Pre-Execution Tooling Modes ---
+    if args.mode in ["INIT", "SYNC"]:
+        if not args.strategy:
+            print(f"Error: --strategy is required for {args.mode} mode.")
+            sys.exit(1)
+            
+        if args.mode == "INIT":
+            handle_init(args.strategy)
+        elif args.mode == "SYNC":
+            handle_sync(args.strategy)
+            
+        return
+
+    # --- Standard Execution Modes ---
     if not args.strategy or not args.ticker:
-        print("Error: --strategy and --ticker are required for CLI modes.")
+        print("Error: --strategy and --ticker are required for execution modes.")
         sys.exit(1)
 
-    # Map CLI modes to ExecutionMode enums
+    # Resolve Default Dates at the CLI level
+    try:
+        if args.end:
+            end_dt = datetime.strptime(args.end, '%Y-%m-%d')
+        else:
+            end_dt = datetime.now()
+            
+        if args.start:
+            start_dt = datetime.strptime(args.start, '%Y-%m-%d')
+        else:
+            start_dt = end_dt - timedelta(days=365) # Default 1 year lookback
+            
+        start_str = start_dt.strftime('%Y-%m-%d')
+        end_str = end_dt.strftime('%Y-%m-%d')
+    except ValueError:
+        print("Error: Invalid date format. Please use YYYY-MM-DD.")
+        sys.exit(1)
+
     mode_map = {
         "BACKTEST": ExecutionMode.BACKTEST,
         "TRAIN": ExecutionMode.TRAIN,
@@ -49,8 +156,8 @@ def main():
         "interval": args.interval,
         "mode": mode_map[args.mode],
         "timeframe": {
-            "start": args.start,
-            "end": args.end
+            "start": start_str, # Now explicitly defined
+            "end": end_str      # Now explicitly defined
         }
     }
 
@@ -58,7 +165,6 @@ def main():
         logger.info(f"Starting {args.mode} for {args.ticker} using {args.strategy}")
         result = controller.execute_job(payload)
         
-        # Display results based on mode
         if args.mode == "BACKTEST":
             print("\n--- Backtest Results ---")
             for ticker, metrics in result.items():
